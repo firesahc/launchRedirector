@@ -12,7 +12,7 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Launch_redirector" >
+        android:theme="@style/Theme.LaunchRedirector" >
 
         <!-- LSPosed 标识 -->
         <meta-data
@@ -37,7 +37,7 @@
 
         <provider
             android:name=".ConfigProvider"
-            android:authorities="com.example.launch_redirector.provider"
+            android:authorities="com.example.launchRedirector"
             android:exported="true" />
 
     </application>

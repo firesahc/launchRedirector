@@ -1,4 +1,4 @@
-package com.example.launch_redirector;
+package com.example.launchRedirector;
 
 import android.content.ContentProvider;
 import android.content.ContentValues;

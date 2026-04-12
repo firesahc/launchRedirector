@@ -1,4 +1,4 @@
-package com.example.launch_redirector;
+package com.example.launchRedirector;
 
 import android.app.Activity;
 import android.content.Context;
@@ -17,7 +17,7 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
 public class MainHook implements IXposedHookLoadPackage {
 
     // 必须与 AndroidManifest.xml 中的 authorities 保持一致！
-    private static final String CONTENT_URI = "content://com.example.dyredirect.provider/config/";
+    private static final String CONTENT_URI = "content://com.example.launchRedirector/config/";
 
     @Override
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {

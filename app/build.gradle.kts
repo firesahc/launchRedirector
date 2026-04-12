@@ -3,7 +3,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.launch_redirector"
+    namespace = "com.example.launchRedirector"
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
@@ -11,11 +11,11 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.launchRedirector.pro"
+        applicationId = "com.example.launchRedirector"
         minSdk = 35
         targetSdk = 36
-        versionCode = 4
-        versionName = "2.0"
+        versionCode = 5
+        versionName = "2.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

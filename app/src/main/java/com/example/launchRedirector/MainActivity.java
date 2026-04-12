@@ -1,4 +1,4 @@
-package com.example.launch_redirector;
+package com.example.launchRedirector;
 
 import android.app.Activity;
 import android.app.AlertDialog;

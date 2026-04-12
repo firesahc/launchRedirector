@@ -22,5 +22,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "launch_redirector"
+rootProject.name = "launchRedirector"
 include(":app")
