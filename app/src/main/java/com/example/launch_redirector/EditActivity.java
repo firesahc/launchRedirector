@@ -5,7 +5,6 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.widget.EditText;
-import java.io.File;
 
 public class EditActivity extends Activity {
     @Override
@@ -29,8 +28,6 @@ public class EditActivity extends Activity {
             String u = etUri.getText().toString().trim();
             if (!p.isEmpty() && !u.isEmpty()) {
                 prefs.edit().putString(p, u).apply();
-                File f = new File(getDataDir(), "shared_prefs/redirect_config.xml");
-                if (f.exists()) f.setReadable(true, false);
                 finish();
             }
         });

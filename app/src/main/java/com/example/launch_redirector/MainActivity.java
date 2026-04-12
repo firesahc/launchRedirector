@@ -9,8 +9,8 @@ import android.os.Bundle;
 import android.widget.ArrayAdapter;
 import android.widget.ListView;
 import android.widget.Toast;
+
 import java.io.DataOutputStream;
-import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -53,7 +53,6 @@ public class MainActivity extends Activity {
                         startActivity(intent);
                     } else {
                         prefs.edit().remove(pkg).apply();
-                        setPrefsReadable();
                         refreshList();
                     }
                 }).show();
@@ -69,11 +68,6 @@ public class MainActivity extends Activity {
         } catch (Exception e) {
             Toast.makeText(this, "需要Root权限以重启桌面", Toast.LENGTH_SHORT).show();
         }
-    }
-
-    private void setPrefsReadable() {
-        File f = new File(getDataDir(), "shared_prefs/redirect_config.xml");
-        if (f.exists()) f.setReadable(true, false);
     }
 
     @Override

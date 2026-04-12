@@ -35,6 +35,11 @@
         </activity>
         <activity android:name=".EditActivity" />
 
+        <provider
+            android:name=".ConfigProvider"
+            android:authorities="com.example.launch_redirector.provider"
+            android:exported="true" />
+
     </application>
 
 </manifest>
