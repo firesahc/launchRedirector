@@ -14,8 +14,8 @@ android {
         applicationId = "com.example.launchRedirector"
         minSdk = 35
         targetSdk = 36
-        versionCode = 6
-        versionName = "3.0"
+        versionCode = 7
+        versionName = "4.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

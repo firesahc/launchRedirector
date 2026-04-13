@@ -20,6 +20,10 @@
             android:value="true"/>
 
         <meta-data
+            android:name="xposedscope"
+            android:resource="@array/xposed_scope" />
+
+        <meta-data
             android:name="xposeddescription"
             android:value="拦截小米桌面软件启动，跳转到自定义页面"/>
 

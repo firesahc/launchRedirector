@@ -50,11 +50,9 @@ public class MainHook implements IXposedHookLoadPackage {
                         }
 
                         // 3. 应用未运行，查询 Provider 获取重定向 URI
-                        String redirectUri = getRedirectUriFromProvider(context, targetPkg);
+                        String redirectUri = getRedirect(context, targetPkg);
 
                         if (redirectUri != null && !redirectUri.isEmpty()) {
-                            XposedBridge.log("冷启动拦截: " + targetPkg + " -> " + redirectUri);
-
                             Intent newIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(redirectUri));
                             // 必须保留桌面启动的核心标志，否则可能导致任务栈混乱
                             newIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -97,7 +95,7 @@ public class MainHook implements IXposedHookLoadPackage {
         return false;
     }
 
-    private String getRedirectUriFromProvider(Context context, String targetPkg) {
+    private String getRedirect(Context context, String targetPkg) {
         String redirectUri = null;
         try {
             Uri queryUri = Uri.parse(CONTENT_URI + targetPkg);
@@ -109,7 +107,7 @@ public class MainHook implements IXposedHookLoadPackage {
                 cursor.close();
             }
         } catch (Exception e) {
-            XposedBridge.log("Provider查询失败: " + e.getMessage());
+            XposedBridge.log("launchRedirector: " + targetPkg + " 规则查询出现错误 " + e.getMessage());
         }
         return redirectUri;
     }
