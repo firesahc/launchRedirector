@@ -23,8 +23,6 @@ public class MainHook implements IXposedHookLoadPackage {
 
     @Override
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam){
-        if (!"com.miui.home".equals(lpparam.packageName)) return;
-
         XposedHelpers.findAndHookMethod(
                 "android.app.Instrumentation", lpparam.classLoader, "execStartActivity",
                 Context.class, IBinder.class, IBinder.class, Activity.class, Intent.class, int.class, Bundle.class,
@@ -53,7 +51,26 @@ public class MainHook implements IXposedHookLoadPackage {
                         String redirectUri = getRedirect(context, targetPkg);
 
                         if (redirectUri != null && !redirectUri.isEmpty()) {
-                            Intent newIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(redirectUri));
+                            Intent newIntent;
+
+                            // 【智能路由判断】
+                            if (redirectUri.contains("://")) {
+                                // 1.这是一个 Deep Link
+                                newIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(redirectUri));
+                            } else {
+                                // 2.这是一个 Activity 类名
+                                newIntent = new Intent();
+
+                                // 支持简写，自动补全包名
+                                String className = redirectUri.startsWith(".") ? targetPkg + redirectUri : redirectUri;
+
+                                // 显式指定要启动的包名和类名
+                                newIntent.setClassName(targetPkg, className);
+
+                                // 保持作为主入口启动的 Action
+                                newIntent.setAction(Intent.ACTION_MAIN);
+                            }
+
                             // 必须保留桌面启动的核心标志，否则可能导致任务栈混乱
                             newIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                             newIntent.addFlags(Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);

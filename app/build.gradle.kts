@@ -12,10 +12,10 @@ android {
 
     defaultConfig {
         applicationId = "com.example.launchRedirector"
-        minSdk = 35
+        minSdk = 29
         targetSdk = 36
-        versionCode = 7
-        versionName = "4.0"
+        versionCode = 8
+        versionName = "5.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
