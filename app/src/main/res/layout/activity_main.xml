@@ -3,34 +3,58 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:fitsSystemWindows="true" 
+    android:fitsSystemWindows="true"
     android:paddingLeft="16dp"
-    android:paddingRight="16dp"
     android:paddingTop="30dp"
+    android:paddingRight="16dp"
     android:paddingBottom="16dp">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:layout_marginBottom="10dp">
-        <Button android:id="@+id/btn_add" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="添加规则" />
-        <Button android:id="@+id/btn_apply" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="应用(重启桌面)" />
+        android:layout_marginBottom="10dp"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btn_add"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/add_rule" />
+
+        <Button
+            android:id="@+id/btn_apply"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/apply_rule" />
     </LinearLayout>
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal">
-        <Button android:id="@+id/btn_import" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="导入配置" />
-        <Button android:id="@+id/btn_export" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="导出配置" />
+
+        <Button
+            android:id="@+id/btn_import"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/import_config" />
+
+        <Button
+            android:id="@+id/btn_export"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/export_config" />
     </LinearLayout>
 
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="提示：长按规则进行修改或删除。导入配置会自动覆盖同名规则。"
         android:layout_marginTop="15dp"
+        android:text="@string/main_hint"
         android:textColor="#888888" />
 
     <ListView

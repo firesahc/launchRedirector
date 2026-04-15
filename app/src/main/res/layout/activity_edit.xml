@@ -5,23 +5,36 @@
     android:orientation="vertical"
     android:padding="20dp">
 
-    <EditText 
-		android:id="@+id/edit_pkg" 
-		android:layout_width="match_parent" 
-		android:layout_height="wrap_content" 
-		android:hint="目标应用包名" />
-    <EditText 
-		android:id="@+id/edit_uri" 
-		android:layout_width="match_parent" 
-		android:layout_height="wrap_content" 
-		android:hint="快捷入口 (url)/目标类名 (activity)" 
-		android:layout_marginTop="10dp" />
+    <EditText
+        android:id="@+id/edit_pkg"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/edit_target_pkg" />
+
+    <EditText
+        android:id="@+id/edit_uri"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:hint="@string/edit_target_uri" />
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="20dp">
-        <Button android:id="@+id/btn_save" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="保存" />
-        <Button android:id="@+id/btn_cancel" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="取消" />
+
+        <Button
+            android:id="@+id/btn_save"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/save" />
+
+        <Button
+            android:id="@+id/btn_cancel"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/cancel" />
     </LinearLayout>
 </LinearLayout>
