@@ -8,6 +8,7 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.IBinder;
+import android.text.TextUtils;
 
 import java.util.List;
 
@@ -20,6 +21,9 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
 public class MainHook implements IXposedHookLoadPackage {
 
     private static final String CONTENT_URI = "content://com.example.launchRedirector/config/";
+    private static final String EXTRA_TEST_LAUNCH = EditActivity.EXTRA_TEST_LAUNCH;
+    private static final String EXTRA_TEST_TARGET_PKG = EditActivity.EXTRA_TEST_TARGET_PKG;
+    private static final String EXTRA_TEST_TARGET_URI = EditActivity.EXTRA_TEST_TARGET_URI;
 
     @Override
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) {
@@ -43,48 +47,44 @@ public class MainHook implements IXposedHookLoadPackage {
                         if (context == null || intent == null || intent.getComponent() == null) return;
 
                         String targetPkg = intent.getComponent().getPackageName();
-
-                        // --- 核心逻辑开始 ---
-
-                        // 1. 只有是桌面点击（ACTION_MAIN）时才考虑重定向
                         if (!Intent.ACTION_MAIN.equals(intent.getAction())) return;
 
-                        // 2. 检查目标应用是否已经在运行（是否有后台任务栈）
-                        if (isAppRunning(context, targetPkg)) {
-                            // 应用已在后台，不做任何修改，直接返回，让系统执行默认的“恢复前台”操作
+                        boolean testLaunch = intent.getBooleanExtra(EXTRA_TEST_LAUNCH, false);
+                        String redirectUri = testLaunch
+                                ? intent.getStringExtra(EXTRA_TEST_TARGET_URI)
+                                : getRedirect(context, targetPkg);
+
+                        if (TextUtils.isEmpty(redirectUri)) {
+                            if (testLaunch) {
+                                param.setResult(null);
+                            }
                             return;
                         }
 
-                        // 3. 应用未运行，查询 Provider 获取重定向 URI
-                        String redirectUri = getRedirect(context, targetPkg);
-
-                        if (redirectUri != null && !redirectUri.isEmpty()) {
-                            Intent newIntent;
-
-                            // 【智能路由判断】
-                            if (redirectUri.contains("://")) {
-                                // 1.这是一个 Deep Link
-                                newIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(redirectUri));
-                            } else {
-                                // 2.这是一个 Activity 类名
-                                newIntent = new Intent();
-
-                                // 支持简写，自动补全包名
-                                String className = redirectUri.startsWith(".") ? targetPkg + redirectUri : redirectUri;
-
-                                // 显式指定要启动的包名和类名
-                                newIntent.setClassName(targetPkg, className);
-
-                                // 保持作为主入口启动的 Action
-                                newIntent.setAction(Intent.ACTION_MAIN);
-                            }
-
-                            // 必须保留桌面启动的核心标志，否则可能导致任务栈混乱
-                            newIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                            newIntent.addFlags(Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
-
-                            param.args[4] = newIntent;
+                        String redirectPkg = testLaunch
+                                ? intent.getStringExtra(EXTRA_TEST_TARGET_PKG)
+                                : targetPkg;
+                        if (TextUtils.isEmpty(redirectPkg)) {
+                            redirectPkg = targetPkg;
                         }
+
+                        if (!testLaunch && isAppRunning(context, targetPkg)) {
+                            return;
+                        }
+
+                        Intent newIntent;
+                        if (redirectUri.contains("://")) {
+                            newIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(redirectUri));
+                        } else {
+                            newIntent = new Intent();
+                            String className = redirectUri.startsWith(".") ? redirectPkg + redirectUri : redirectUri;
+                            newIntent.setClassName(redirectPkg, className);
+                            newIntent.setAction(Intent.ACTION_MAIN);
+                        }
+
+                        newIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        newIntent.addFlags(Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+                        param.args[4] = newIntent;
                     }
                 });
     }
@@ -93,7 +93,6 @@ public class MainHook implements IXposedHookLoadPackage {
         ActivityManager am = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
         if (am == null) return false;
 
-        // 优化点：先查进程级。如果连进程都没有，说明彻底死了（冷启动），直接返回 false
         boolean hasProcess = false;
         List<ActivityManager.RunningAppProcessInfo> processes = am.getRunningAppProcesses();
         if (processes != null) {
@@ -105,10 +104,8 @@ public class MainHook implements IXposedHookLoadPackage {
             }
         }
 
-        // 进程不存在，绝对是冷启动
         if (!hasProcess) return false;
 
-        // 进程存在，再查任务栈（确保它有 UI 界面在后台，而不是仅仅有个后台服务在跑）
         List<ActivityManager.RunningTaskInfo> tasks = am.getRunningTasks(50);
         if (tasks != null) {
             for (ActivityManager.RunningTaskInfo task : tasks) {

@@ -1,12 +1,14 @@
 <resources>
     <string name="app_name">launchRedirector</string>
-    <string name="main_hint">提示：长按规则进行修改或删除。导入配置会自动覆盖同名规则。</string>
+    <string name="main_hint">长按规则进行修改或删除。导入配置会自动覆盖同名规则。</string>
     <string name="add_rule">添加规则</string>
-    <string name="apply_rule">应用(重启桌面)</string>
+    <string name="apply_rule">重启桌面</string>
     <string name="import_config">导入配置</string>
     <string name="export_config">导出配置</string>
     <string name="edit_target_pkg">目标应用包名</string>
     <string name="edit_target_uri">快捷入口 (url)/目标类名 (activity)</string>
+    <string name="pick_installed_app">选择应用</string>
+    <string name="test_rule">模拟测试</string>
     <string name="save">保存</string>
     <string name="cancel">取消</string>
 </resources>

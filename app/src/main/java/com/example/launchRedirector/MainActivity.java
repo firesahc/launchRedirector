@@ -7,8 +7,13 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Bundle;
-import android.widget.ArrayAdapter;
+import android.text.TextUtils;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.BaseAdapter;
 import android.widget.ListView;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import org.json.JSONObject;
@@ -21,6 +26,7 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -31,9 +37,10 @@ public class MainActivity extends Activity {
     private static final int REQUEST_CODE_EXPORT = 101;
     private static final int REQUEST_CODE_IMPORT = 102;
 
-    private final List<String> pkgList = new ArrayList<>();
+    private final List<RuleEntry> ruleEntries = new ArrayList<>();
     private SharedPreferences prefs;
     private ListView listView;
+    private RuleAdapter adapter;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -42,6 +49,8 @@ public class MainActivity extends Activity {
 
         prefs = getSharedPreferences("redirect_config", Context.MODE_PRIVATE);
         listView = findViewById(R.id.list_view);
+        adapter = new RuleAdapter();
+        listView.setAdapter(adapter);
 
         findViewById(R.id.btn_add).setOnClickListener(v -> startActivity(new Intent(this, EditActivity.class)));
         findViewById(R.id.btn_apply).setOnClickListener(v -> restartLauncher());
@@ -49,7 +58,9 @@ public class MainActivity extends Activity {
         findViewById(R.id.btn_import).setOnClickListener(v -> importConfig());
 
         listView.setOnItemLongClickListener((parent, view, position, id) -> {
-            showActionDialog(pkgList.get(position));
+            if (position >= 0 && position < ruleEntries.size()) {
+                showActionDialog(ruleEntries.get(position).pkg);
+            }
             return true;
         });
     }
@@ -61,15 +72,30 @@ public class MainActivity extends Activity {
     }
 
     private void refreshList() {
-        pkgList.clear();
-        pkgList.addAll(prefs.getAll().keySet());
-        Collections.sort(pkgList);
-        listView.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, pkgList));
+        ruleEntries.clear();
+        Map<String, ?> allEntries = prefs.getAll();
+        for (Map.Entry<String, ?> entry : allEntries.entrySet()) {
+            String pkg = entry.getKey();
+            Object value = entry.getValue();
+            if (TextUtils.isEmpty(pkg) || value == null) {
+                continue;
+            }
+            String rule = String.valueOf(value);
+            if (TextUtils.isEmpty(rule)) {
+                continue;
+            }
+            ruleEntries.add(new RuleEntry(pkg, rule));
+        }
+
+        ruleEntries.sort(Comparator
+                .comparing((RuleEntry e) -> getAppLabel(e.pkg), String.CASE_INSENSITIVE_ORDER)
+                .thenComparing(e -> e.pkg, String.CASE_INSENSITIVE_ORDER));
+        adapter.notifyDataSetChanged();
     }
 
     private void showActionDialog(String pkg) {
         new AlertDialog.Builder(this)
-                .setTitle("操作 " + pkg)
+                .setTitle("编辑：" + getAppLabel(pkg))
                 .setItems(new CharSequence[]{"修改", "删除"}, (dialog, which) -> {
                     if (which == 0) {
                         Intent intent = new Intent(this, EditActivity.class);
@@ -81,6 +107,17 @@ public class MainActivity extends Activity {
                     }
                 })
                 .show();
+    }
+
+    private String getAppLabel(String pkg) {
+        try {
+            CharSequence label = getPackageManager().getApplicationLabel(getPackageManager().getApplicationInfo(pkg, 0));
+            if (!TextUtils.isEmpty(label)) {
+                return label.toString();
+            }
+        } catch (Exception ignored) {
+        }
+        return pkg;
     }
 
     private void restartLauncher() {
@@ -178,6 +215,65 @@ public class MainActivity extends Activity {
         } catch (Exception e) {
             XposedBridge.log("launchRedirector: 导入失败 " + e.getMessage());
             Toast.makeText(this, "导入失败，已输出错误日志", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private final class RuleAdapter extends BaseAdapter {
+        private final LayoutInflater inflater = LayoutInflater.from(MainActivity.this);
+
+        @Override
+        public int getCount() {
+            return ruleEntries.size();
+        }
+
+        @Override
+        public Object getItem(int position) {
+            return ruleEntries.get(position);
+        }
+
+        @Override
+        public long getItemId(int position) {
+            return position;
+        }
+
+        @Override
+        public View getView(int position, View convertView, ViewGroup parent) {
+            ViewHolder holder;
+            if (convertView == null) {
+                convertView = inflater.inflate(R.layout.item_rule_entry, parent, false);
+                holder = new ViewHolder(convertView);
+                convertView.setTag(holder);
+            } else {
+                holder = (ViewHolder) convertView.getTag();
+            }
+
+            RuleEntry entry = ruleEntries.get(position);
+            holder.tvTitle.setText(getAppLabel(entry.pkg));
+            holder.tvPkg.setText(entry.pkg);
+            holder.tvRule.setText(entry.rule);
+            return convertView;
+        }
+    }
+
+    private static final class ViewHolder {
+        final TextView tvTitle;
+        final TextView tvPkg;
+        final TextView tvRule;
+
+        ViewHolder(View root) {
+            tvTitle = root.findViewById(R.id.tv_item_title);
+            tvPkg = root.findViewById(R.id.tv_item_pkg);
+            tvRule = root.findViewById(R.id.tv_item_rule);
+        }
+    }
+
+    private static final class RuleEntry {
+        final String pkg;
+        final String rule;
+
+        RuleEntry(String pkg, String rule) {
+            this.pkg = pkg;
+            this.rule = rule;
         }
     }
 }
