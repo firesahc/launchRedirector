@@ -15,6 +15,8 @@ import android.view.ViewGroup;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -22,16 +24,17 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.material.appbar.MaterialToolbar;
 
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
 import java.io.DataOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -44,8 +47,6 @@ import java.util.concurrent.TimeUnit;
 import de.robv.android.xposed.XposedBridge;
 
 public class MainActivity extends AppCompatActivity {
-    private static final int REQUEST_CODE_EXPORT = 101;
-    private static final int REQUEST_CODE_IMPORT = 102;
     private static final int SU_TIMEOUT_SEC = 5;
 
     private final List<RuleEntry> ruleEntries = new ArrayList<>();
@@ -55,12 +56,37 @@ public class MainActivity extends AppCompatActivity {
     private volatile boolean restarting = false;
     private View emptyView;
 
+    private ActivityResultLauncher<Intent> exportLauncher;
+    private ActivityResultLauncher<Intent> importLauncher;
+
+    /** Callback for adapter long-press actions (avoids non-static inner class leak). */
+    interface OnRuleActionListener {
+        void onRuleLongClick(String pkg);
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
         prefs = getSharedPreferences("redirect_config", Context.MODE_PRIVATE);
+
+        // --- Activity Result API (replaces deprecated startActivityForResult) ---
+        exportLauncher = registerForActivityResult(
+                new ActivityResultContracts.StartActivityForResult(),
+                result -> {
+                    if (result.getResultCode() != RESULT_OK || result.getData() == null) return;
+                    Uri uri = result.getData().getData();
+                    if (uri != null) writeExportFile(uri);
+                });
+
+        importLauncher = registerForActivityResult(
+                new ActivityResultContracts.StartActivityForResult(),
+                result -> {
+                    if (result.getResultCode() != RESULT_OK || result.getData() == null) return;
+                    Uri uri = result.getData().getData();
+                    if (uri != null) readImportFile(uri);
+                });
 
         // Toolbar
         MaterialToolbar toolbar = findViewById(R.id.toolbar);
@@ -70,7 +96,7 @@ public class MainActivity extends AppCompatActivity {
         // RecyclerView
         recyclerView = findViewById(R.id.recycler_view);
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
-        adapter = new RuleAdapter();
+        adapter = new RuleAdapter(ruleEntries, this::showActionDialog);
         recyclerView.setAdapter(adapter);
 
         // Empty state
@@ -106,7 +132,6 @@ public class MainActivity extends AppCompatActivity {
         ruleEntries.clear();
         Map<String, ?> allEntries = prefs.getAll();
 
-        // 先收集所有有效条目（纯内存操作，极快）
         List<RuleEntry> pending = new ArrayList<>();
         for (Map.Entry<String, ?> entry : allEntries.entrySet()) {
             String pkg = entry.getKey();
@@ -124,14 +149,16 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        // 后台预计算标签，完成后回主线程排序
+        // Background label computation, guarded against Activity destruction
         new Thread(() -> {
             Map<String, String> labelCache = new HashMap<>();
             for (RuleEntry e : pending) {
-                labelCache.put(e.pkg, getAppLabel(e.pkg));
+                labelCache.put(e.pkg, AppUtils.getAppLabel(MainActivity.this, e.pkg));
             }
 
             runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
+
                 ruleEntries.addAll(pending);
                 ruleEntries.sort(Comparator
                     .comparing((RuleEntry e) -> labelCache.getOrDefault(e.pkg, e.pkg),
@@ -146,7 +173,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void showActionDialog(String pkg) {
         new AlertDialog.Builder(this)
-                .setTitle("编辑：" + getAppLabel(pkg))
+                .setTitle("编辑：" + AppUtils.getAppLabel(this, pkg))
                 .setItems(new CharSequence[]{"修改", "删除"}, (dialog, which) -> {
                     if (which == 0) {
                         Intent intent = new Intent(this, EditActivity.class);
@@ -160,25 +187,7 @@ public class MainActivity extends AppCompatActivity {
                 .show();
     }
 
-    private String getAppLabel(String pkg) {
-        try {
-            CharSequence label = getPackageManager().getApplicationLabel(
-                    getPackageManager().getApplicationInfo(pkg, 0));
-            if (!TextUtils.isEmpty(label)) {
-                return label.toString();
-            }
-        } catch (android.content.pm.PackageManager.NameNotFoundException ignored) {
-            // 应用未安装或已卸载，使用包名作为标签
-        }
-        return pkg;
-    }
-
-    private String getFirstChar(String label) {
-        if (TextUtils.isEmpty(label)) return "?";
-        return label.substring(0, 1);
-    }
-
-    // ── Restart / Import / Export (unchanged business logic) ──
+    // ── Restart / Import / Export ──
 
     private void restartLauncher() {
         if (restarting) {
@@ -192,7 +201,6 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        // 检测系统中所有桌面应用
         Intent homeIntent = new Intent(Intent.ACTION_MAIN);
         homeIntent.addCategory(Intent.CATEGORY_HOME);
         List<ResolveInfo> homeResolves = getPackageManager().queryIntentActivities(homeIntent, 0);
@@ -205,7 +213,6 @@ public class MainActivity extends AppCompatActivity {
             }
         }
 
-        // 过滤作用域中属于桌面的包名
         List<String> targets = new ArrayList<>();
         for (String pkg : scopePkgs) {
             if (!TextUtils.isEmpty(pkg) && launcherPkgs.contains(pkg)) {
@@ -245,10 +252,14 @@ public class MainActivity extends AppCompatActivity {
             }).start();
 
             Toast.makeText(this, "已发送重启桌面命令", Toast.LENGTH_SHORT).show();
-        } catch (Exception e) {
+        } catch (IOException e) {
             restarting = false;
             Toast.makeText(this, "需要 Root 权限以重启桌面", Toast.LENGTH_SHORT).show();
-            XposedBridge.log("launchRedirector: 重启桌面失败 " + e.getMessage());
+            XposedBridge.log("launchRedirector: su 执行失败 " + e.getMessage());
+        } catch (SecurityException e) {
+            restarting = false;
+            Toast.makeText(this, "无权限执行 Root 命令", Toast.LENGTH_SHORT).show();
+            XposedBridge.log("launchRedirector: su 权限不足 " + e.getMessage());
         }
     }
 
@@ -257,29 +268,14 @@ public class MainActivity extends AppCompatActivity {
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("application/json");
         intent.putExtra(Intent.EXTRA_TITLE, "redirect_rules.json");
-        startActivityForResult(intent, REQUEST_CODE_EXPORT);
+        exportLauncher.launch(intent);
     }
 
     private void importConfig() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("application/json");
-        startActivityForResult(intent, REQUEST_CODE_IMPORT);
-    }
-
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (resultCode != RESULT_OK || data == null || data.getData() == null) {
-            return;
-        }
-
-        Uri uri = data.getData();
-        if (requestCode == REQUEST_CODE_EXPORT) {
-            writeExportFile(uri);
-        } else if (requestCode == REQUEST_CODE_IMPORT) {
-            readImportFile(uri);
-        }
+        importLauncher.launch(intent);
     }
 
     private void writeExportFile(Uri uri) {
@@ -323,7 +319,7 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        // 阶段 1：检测冲突
+        // Phase 1: detect conflicts
         List<String> conflicts = new ArrayList<>();
         boolean hasChanges = false;
         Iterator<String> keys = json.keys();
@@ -335,15 +331,14 @@ public class MainActivity extends AppCompatActivity {
                     if (!existingValue.equals(json.getString(key))) {
                         conflicts.add(key);
                     }
-                    // 值相同 → 不计入冲突，也不算有变化
-                } catch (Exception ignored) {}
+                } catch (JSONException ignored) {}
             } else {
-                hasChanges = true;  // 新规则，需要写入
+                hasChanges = true;
             }
         }
         if (!conflicts.isEmpty()) hasChanges = true;
 
-        // 阶段 2：确认后执行
+        // Phase 2: confirm and execute
         final JSONObject finalJson = json;
         if (conflicts.isEmpty() && !hasChanges) {
             Toast.makeText(this, "规则无变化，无需导入", Toast.LENGTH_SHORT).show();
@@ -368,11 +363,9 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void doImport(JSONObject json) {
-        // Activity 生命周期守护
         if (isFinishing() || isDestroyed()) return;
 
         SharedPreferences.Editor editor = prefs.edit();
-        // ⚠️ 注意：必须重新获取 Iterator，上一轮的 keys() 已耗尽
         Iterator<String> keys = json.keys();
         int count = 0;
         while (keys.hasNext()) {
@@ -380,12 +373,11 @@ public class MainActivity extends AppCompatActivity {
             try {
                 String newValue = json.getString(key);
                 String existingValue = prefs.getString(key, null);
-                // 跳过值未变化的规则，减少无意义写入
                 if (!newValue.equals(existingValue)) {
                     editor.putString(key, newValue);
                     count++;
                 }
-            } catch (Exception ignored) {}
+            } catch (JSONException ignored) {}
         }
 
         if (count > 0) {
@@ -395,9 +387,17 @@ public class MainActivity extends AppCompatActivity {
         Toast.makeText(this, "成功导入 " + count + " 条规则", Toast.LENGTH_SHORT).show();
     }
 
-    // ── RecyclerView Adapter ──
+    // ── RecyclerView Adapter (static to avoid implicit Activity reference) ──
 
-    private final class RuleAdapter extends RecyclerView.Adapter<RuleAdapter.VH> {
+    private static final class RuleAdapter extends RecyclerView.Adapter<RuleAdapter.VH> {
+
+        private final List<RuleEntry> ruleEntries;
+        private final OnRuleActionListener listener;
+
+        RuleAdapter(List<RuleEntry> ruleEntries, OnRuleActionListener listener) {
+            this.ruleEntries = ruleEntries;
+            this.listener = listener;
+        }
 
         @NonNull
         @Override
@@ -410,14 +410,14 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public void onBindViewHolder(@NonNull VH holder, int position) {
             RuleEntry entry = ruleEntries.get(position);
-            String label = getAppLabel(entry.pkg);
-            holder.tvIcon.setText(getFirstChar(label));
+            String label = AppUtils.getAppLabel(holder.itemView.getContext(), entry.pkg);
+            holder.tvIcon.setText(AppUtils.getFirstChar(label));
             holder.tvTitle.setText(label);
             holder.tvPkg.setText(entry.pkg);
             holder.tvRule.setText(entry.rule);
 
             holder.itemView.setOnLongClickListener(v -> {
-                showActionDialog(entry.pkg);
+                listener.onRuleLongClick(entry.pkg);
                 return true;
             });
         }
@@ -427,7 +427,7 @@ public class MainActivity extends AppCompatActivity {
             return ruleEntries.size();
         }
 
-        final class VH extends RecyclerView.ViewHolder {
+        static final class VH extends RecyclerView.ViewHolder {
             final TextView tvIcon;
             final TextView tvTitle;
             final TextView tvPkg;

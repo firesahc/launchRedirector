@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.os.Bundle;
@@ -15,17 +16,12 @@ import com.google.android.material.button.MaterialButton;
 import com.google.android.material.textfield.TextInputEditText;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 public class EditActivity extends Activity {
-
-    public static final String EXTRA_TEST_LAUNCH = "launchRedirector_test_launch";
-    public static final String EXTRA_TEST_TARGET_PKG = "launchRedirector_test_pkg";
-    public static final String EXTRA_TEST_TARGET_URI = "launchRedirector_test_uri";
 
     private TextInputEditText etPkg;
     private TextInputEditText etUri;
@@ -126,7 +122,7 @@ public class EditActivity extends Activity {
             return;
         }
 
-        android.content.SharedPreferences.Editor editor = getSharedPreferences(
+        SharedPreferences.Editor editor = getSharedPreferences(
                 "redirect_config", Context.MODE_PRIVATE).edit();
         if (!TextUtils.isEmpty(originalPkg) && !originalPkg.equals(pkg)) {
             editor.remove(originalPkg);
@@ -154,13 +150,9 @@ public class EditActivity extends Activity {
             return;
         }
 
-        launcherIntent.putExtra(EXTRA_TEST_LAUNCH, true);
-        launcherIntent.putExtra(EXTRA_TEST_TARGET_PKG, pkg);
-        launcherIntent.putExtra(EXTRA_TEST_TARGET_URI, uri);
-
         try {
             startActivity(launcherIntent);
-            Toast.makeText(this, "模拟桌面启动：" + getAppLabel(pkg), Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "模拟桌面启动：" + AppUtils.getAppLabel(this, pkg), Toast.LENGTH_SHORT).show();
         } catch (Exception e) {
             Toast.makeText(this, "模拟测试失败", Toast.LENGTH_LONG).show();
         }
@@ -188,18 +180,6 @@ public class EditActivity extends Activity {
         intent.addCategory(Intent.CATEGORY_LAUNCHER);
         intent.setClassName(resolveInfo.activityInfo.packageName, resolveInfo.activityInfo.name);
         return intent;
-    }
-
-    private String getAppLabel(String pkg) {
-        try {
-            CharSequence label = packageManager.getApplicationLabel(
-                    packageManager.getApplicationInfo(pkg, 0));
-            if (!TextUtils.isEmpty(label)) {
-                return label.toString();
-            }
-        } catch (Exception ignored) {
-        }
-        return pkg;
     }
 
     private static final class AppEntry {
