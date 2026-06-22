@@ -2,9 +2,6 @@
     <string name="app_name">launchRedirector</string>
     <string name="main_hint">长按规则进行修改或删除。导入配置会自动覆盖同名规则。</string>
     <string name="add_rule">添加规则</string>
-    <string name="apply_rule">重启桌面</string>
-    <string name="import_config">导入配置</string>
-    <string name="export_config">导出配置</string>
     <string name="edit_target_pkg">目标应用包名</string>
     <string name="edit_target_uri">快捷入口 (url) / 目标类名 (activity)</string>
     <string name="pick_installed_app">选择应用</string>
@@ -12,7 +9,6 @@
     <string name="save">保存</string>
     <string name="cancel">取消</string>
 
-    <!-- New M3 strings -->
     <string name="title_main">启动重定向</string>
     <string name="title_add_rule">添加规则</string>
     <string name="title_edit_rule">修改规则</string>
@@ -21,4 +17,10 @@
     <string name="menu_export">导出配置</string>
     <string name="empty_no_rules">暂无规则</string>
     <string name="empty_no_rules_desc">点击右下角 + 添加第一条重定向规则</string>
+
+    <string name="empty_icon">📋</string>
+
+    <!-- Edit screen section labels -->
+    <string name="section_target_app">目标应用</string>
+    <string name="section_redirect_target">跳转目标</string>
 </resources>
