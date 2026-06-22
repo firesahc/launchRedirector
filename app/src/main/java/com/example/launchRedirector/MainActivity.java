@@ -32,20 +32,26 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 import de.robv.android.xposed.XposedBridge;
 
 public class MainActivity extends AppCompatActivity {
     private static final int REQUEST_CODE_EXPORT = 101;
     private static final int REQUEST_CODE_IMPORT = 102;
+    private static final int SU_TIMEOUT_SEC = 5;
 
     private final List<RuleEntry> ruleEntries = new ArrayList<>();
     private SharedPreferences prefs;
     private RecyclerView recyclerView;
     private RuleAdapter adapter;
+    private volatile boolean restarting = false;
     private View emptyView;
 
     @Override
@@ -98,28 +104,43 @@ public class MainActivity extends AppCompatActivity {
     private void refreshList() {
         ruleEntries.clear();
         Map<String, ?> allEntries = prefs.getAll();
+
+        // 先收集所有有效条目（纯内存操作，极快）
+        List<RuleEntry> pending = new ArrayList<>();
         for (Map.Entry<String, ?> entry : allEntries.entrySet()) {
             String pkg = entry.getKey();
             Object value = entry.getValue();
-            if (TextUtils.isEmpty(pkg) || value == null) {
-                continue;
-            }
+            if (TextUtils.isEmpty(pkg) || value == null) continue;
             String rule = String.valueOf(value);
-            if (TextUtils.isEmpty(rule)) {
-                continue;
-            }
-            ruleEntries.add(new RuleEntry(pkg, rule));
+            if (TextUtils.isEmpty(rule)) continue;
+            pending.add(new RuleEntry(pkg, rule));
         }
 
-        ruleEntries.sort(Comparator
-                .comparing((RuleEntry e) -> getAppLabel(e.pkg), String.CASE_INSENSITIVE_ORDER)
-                .thenComparing(e -> e.pkg, String.CASE_INSENSITIVE_ORDER));
-        adapter.notifyDataSetChanged();
+        if (pending.isEmpty()) {
+            emptyView.setVisibility(View.VISIBLE);
+            recyclerView.setVisibility(View.GONE);
+            adapter.notifyDataSetChanged();
+            return;
+        }
 
-        // Show/hide empty state
-        boolean empty = ruleEntries.isEmpty();
-        emptyView.setVisibility(empty ? View.VISIBLE : View.GONE);
-        recyclerView.setVisibility(empty ? View.GONE : View.VISIBLE);
+        // 后台预计算标签，完成后回主线程排序
+        new Thread(() -> {
+            Map<String, String> labelCache = new HashMap<>();
+            for (RuleEntry e : pending) {
+                labelCache.put(e.pkg, getAppLabel(e.pkg));
+            }
+
+            runOnUiThread(() -> {
+                ruleEntries.addAll(pending);
+                ruleEntries.sort(Comparator
+                    .comparing((RuleEntry e) -> labelCache.getOrDefault(e.pkg, e.pkg),
+                               String.CASE_INSENSITIVE_ORDER)
+                    .thenComparing(e -> e.pkg, String.CASE_INSENSITIVE_ORDER));
+                emptyView.setVisibility(View.GONE);
+                recyclerView.setVisibility(View.VISIBLE);
+                adapter.notifyDataSetChanged();
+            });
+        }).start();
     }
 
     private void showActionDialog(String pkg) {
@@ -145,7 +166,8 @@ public class MainActivity extends AppCompatActivity {
             if (!TextUtils.isEmpty(label)) {
                 return label.toString();
             }
-        } catch (Exception ignored) {
+        } catch (android.content.pm.PackageManager.NameNotFoundException ignored) {
+            // 应用未安装或已卸载，使用包名作为标签
         }
         return pkg;
     }
@@ -222,6 +244,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void readImportFile(Uri uri) {
+        JSONObject json = null;
         try {
             StringBuilder sb = new StringBuilder();
             try (InputStream is = getContentResolver().openInputStream(uri)) {
@@ -235,24 +258,83 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
             }
-
-            JSONObject json = new JSONObject(sb.toString());
-            SharedPreferences.Editor editor = prefs.edit();
-            Iterator<String> keys = json.keys();
-            int count = 0;
-            while (keys.hasNext()) {
-                String key = keys.next();
-                editor.putString(key, json.getString(key));
-                count++;
-            }
-            editor.apply();
-
-            refreshList();
-            Toast.makeText(this, "成功导入 " + count + " 条规则", Toast.LENGTH_SHORT).show();
+            json = new JSONObject(sb.toString());
         } catch (Exception e) {
             XposedBridge.log("launchRedirector: 导入失败 " + e.getMessage());
-            Toast.makeText(this, "导入失败，已输出错误日志", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "导入失败，文件格式错误", Toast.LENGTH_LONG).show();
+            return;
         }
+
+        // 阶段 1：检测冲突
+        List<String> conflicts = new ArrayList<>();
+        boolean hasChanges = false;
+        Iterator<String> keys = json.keys();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            String existingValue = prefs.getString(key, null);
+            if (existingValue != null) {
+                try {
+                    if (!existingValue.equals(json.getString(key))) {
+                        conflicts.add(key);
+                    }
+                    // 值相同 → 不计入冲突，也不算有变化
+                } catch (Exception ignored) {}
+            } else {
+                hasChanges = true;  // 新规则，需要写入
+            }
+        }
+        if (!conflicts.isEmpty()) hasChanges = true;
+
+        // 阶段 2：确认后执行
+        final JSONObject finalJson = json;
+        if (conflicts.isEmpty() && !hasChanges) {
+            Toast.makeText(this, "规则无变化，无需导入", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        if (!conflicts.isEmpty()) {
+            int showCount = Math.min(conflicts.size(), 5);
+            String conflictList = TextUtils.join("\n", conflicts.subList(0, showCount));
+            if (conflicts.size() > 5) {
+                conflictList += "\n…及其他 " + (conflicts.size() - 5) + " 条";
+            }
+            new AlertDialog.Builder(this)
+                .setTitle("规则冲突（" + conflicts.size() + " 条）")
+                .setMessage("以下规则将被覆盖：\n" + conflictList)
+                .setPositiveButton("确认覆盖", (d, w) -> doImport(finalJson))
+                .setNegativeButton("取消", null)
+                .show();
+        } else {
+            doImport(finalJson);
+        }
+    }
+
+    private void doImport(JSONObject json) {
+        // Activity 生命周期守护
+        if (isFinishing() || isDestroyed()) return;
+
+        SharedPreferences.Editor editor = prefs.edit();
+        // ⚠️ 注意：必须重新获取 Iterator，上一轮的 keys() 已耗尽
+        Iterator<String> keys = json.keys();
+        int count = 0;
+        while (keys.hasNext()) {
+            String key = keys.next();
+            try {
+                String newValue = json.getString(key);
+                String existingValue = prefs.getString(key, null);
+                // 跳过值未变化的规则，减少无意义写入
+                if (!newValue.equals(existingValue)) {
+                    editor.putString(key, newValue);
+                    count++;
+                }
+            } catch (Exception ignored) {}
+        }
+
+        if (count > 0) {
+            editor.apply();
+        }
+        refreshList();
+        Toast.makeText(this, "成功导入 " + count + " 条规则", Toast.LENGTH_SHORT).show();
     }
 
     // ── RecyclerView Adapter ──
