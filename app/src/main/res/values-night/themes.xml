@@ -1,16 +1,42 @@
 <resources>
-    <!-- Base application theme. -->
-    <style name="Theme.LaunchRedirector" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
-        <!-- Primary brand color. -->
-        <item name="colorPrimary">@color/purple_200</item>
-        <item name="colorPrimaryVariant">@color/purple_700</item>
-        <item name="colorOnPrimary">@color/black</item>
-        <!-- Secondary brand color. -->
-        <item name="colorSecondary">@color/teal_200</item>
-        <item name="colorSecondaryVariant">@color/teal_200</item>
-        <item name="colorOnSecondary">@color/black</item>
-        <!-- Status bar color. -->
-        <item name="android:statusBarColor">?attr/colorPrimaryVariant</item>
-        <!-- Customize your theme here. -->
+    <!-- Material 3 DayNight dark theme -->
+    <style name="Theme.LaunchRedirector" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- Primary brand color (lighter for dark backgrounds) -->
+        <item name="colorPrimary">@color/m3_dark_primary</item>
+        <item name="colorOnPrimary">@color/m3_dark_on_primary</item>
+        <item name="colorPrimaryContainer">@color/m3_dark_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/m3_dark_on_primary_container</item>
+
+        <!-- Secondary -->
+        <item name="colorSecondary">@color/m3_dark_secondary</item>
+        <item name="colorOnSecondary">@color/m3_dark_on_secondary</item>
+        <item name="colorSecondaryContainer">@color/m3_dark_secondary_container</item>
+        <item name="colorOnSecondaryContainer">@color/m3_dark_on_secondary_container</item>
+
+        <!-- Tertiary -->
+        <item name="colorTertiary">@color/m3_dark_tertiary</item>
+        <item name="colorOnTertiary">@color/m3_dark_on_tertiary</item>
+        <item name="colorTertiaryContainer">@color/m3_dark_tertiary_container</item>
+        <item name="colorOnTertiaryContainer">@color/m3_dark_on_tertiary_container</item>
+
+        <!-- Error -->
+        <item name="colorError">@color/m3_dark_error</item>
+        <item name="colorOnError">@color/m3_dark_on_error</item>
+
+        <!-- Surface / Background -->
+        <item name="colorSurface">@color/m3_dark_surface</item>
+        <item name="colorOnSurface">@color/m3_dark_on_surface</item>
+        <item name="colorSurfaceVariant">@color/m3_dark_surface_variant</item>
+        <item name="colorOnSurfaceVariant">@color/m3_dark_on_surface_variant</item>
+        <item name="android:colorBackground">@color/m3_dark_background</item>
+        <item name="colorOnBackground">@color/m3_dark_on_background</item>
+
+        <!-- Outline -->
+        <item name="colorOutline">@color/m3_dark_outline</item>
+        <item name="colorOutlineVariant">@color/m3_dark_outline_variant</item>
+
+        <!-- Status bar -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 </resources>
