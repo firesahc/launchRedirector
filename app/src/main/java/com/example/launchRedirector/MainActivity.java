@@ -4,6 +4,7 @@ import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ResolveInfo;
 import android.net.Uri;
 import android.os.Bundle;
 import android.text.TextUtils;
@@ -180,15 +181,72 @@ public class MainActivity extends AppCompatActivity {
     // ── Restart / Import / Export (unchanged business logic) ──
 
     private void restartLauncher() {
+        if (restarting) {
+            Toast.makeText(this, "正在重启桌面，请稍候…", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        String[] scopePkgs = getResources().getStringArray(R.array.xposed_scope);
+        if (scopePkgs == null || scopePkgs.length == 0) {
+            Toast.makeText(this, "未配置作用域，请在 LSPosed 中设置", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // 检测系统中所有桌面应用
+        Intent homeIntent = new Intent(Intent.ACTION_MAIN);
+        homeIntent.addCategory(Intent.CATEGORY_HOME);
+        List<ResolveInfo> homeResolves = getPackageManager().queryIntentActivities(homeIntent, 0);
+        Set<String> launcherPkgs = new HashSet<>();
+        if (homeResolves != null) {
+            for (ResolveInfo ri : homeResolves) {
+                if (ri.activityInfo != null && ri.activityInfo.packageName != null) {
+                    launcherPkgs.add(ri.activityInfo.packageName);
+                }
+            }
+        }
+
+        // 过滤作用域中属于桌面的包名
+        List<String> targets = new ArrayList<>();
+        for (String pkg : scopePkgs) {
+            if (!TextUtils.isEmpty(pkg) && launcherPkgs.contains(pkg)) {
+                targets.add(pkg);
+            }
+        }
+
+        if (targets.isEmpty()) {
+            Toast.makeText(this, "作用域中未检测到桌面应用", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        restarting = true;
+
         try {
-            Process process = Runtime.getRuntime().exec("su");
-            try (DataOutputStream os = new DataOutputStream(process.getOutputStream())) {
-                os.writeBytes("pkill -f com.miui.home\n");
+            Process p = Runtime.getRuntime().exec("su");
+            try (DataOutputStream os = new DataOutputStream(p.getOutputStream())) {
+                for (String pkg : targets) {
+                    os.writeBytes("am force-stop " + pkg + "\n");
+                    os.writeBytes("killall " + pkg + "\n");
+                }
                 os.writeBytes("exit\n");
                 os.flush();
             }
+
+            new Thread(() -> {
+                try {
+                    if (!p.waitFor(SU_TIMEOUT_SEC, TimeUnit.SECONDS)) {
+                        p.destroyForcibly();
+                    }
+                } catch (InterruptedException e) {
+                    p.destroyForcibly();
+                    Thread.currentThread().interrupt();
+                } finally {
+                    restarting = false;
+                }
+            }).start();
+
             Toast.makeText(this, "已发送重启桌面命令", Toast.LENGTH_SHORT).show();
         } catch (Exception e) {
+            restarting = false;
             Toast.makeText(this, "需要 Root 权限以重启桌面", Toast.LENGTH_SHORT).show();
             XposedBridge.log("launchRedirector: 重启桌面失败 " + e.getMessage());
         }
