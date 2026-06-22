@@ -1,6 +1,5 @@
 package com.example.launchRedirector;
 
-import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -23,6 +22,7 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.material.appbar.MaterialToolbar;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -172,18 +172,22 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void showActionDialog(String pkg) {
-        new AlertDialog.Builder(this)
-                .setTitle("编辑：" + AppUtils.getAppLabel(this, pkg))
-                .setItems(new CharSequence[]{"修改", "删除"}, (dialog, which) -> {
-                    if (which == 0) {
-                        Intent intent = new Intent(this, EditActivity.class);
-                        intent.putExtra("pkg", pkg);
-                        startActivity(intent);
-                    } else {
-                        prefs.edit().remove(pkg).apply();
-                        refreshList();
-                    }
+        String label = AppUtils.getAppLabel(this, pkg);
+        String rule = prefs.getString(pkg, "");
+
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(label)
+                .setMessage("包名：" + pkg + "\n规则：" + rule)
+                .setPositiveButton("修改", (dialog, which) -> {
+                    Intent intent = new Intent(this, EditActivity.class);
+                    intent.putExtra("pkg", pkg);
+                    startActivity(intent);
                 })
+                .setNegativeButton("删除", (dialog, which) -> {
+                    prefs.edit().remove(pkg).apply();
+                    refreshList();
+                })
+                .setNeutralButton("取消", null)
                 .show();
     }
 
@@ -351,7 +355,7 @@ public class MainActivity extends AppCompatActivity {
             if (conflicts.size() > 5) {
                 conflictList += "\n…及其他 " + (conflicts.size() - 5) + " 条";
             }
-            new AlertDialog.Builder(this)
+            new MaterialAlertDialogBuilder(this)
                 .setTitle("规则冲突（" + conflicts.size() + " 条）")
                 .setMessage("以下规则将被覆盖：\n" + conflictList)
                 .setPositiveButton("确认覆盖", (d, w) -> doImport(finalJson))
