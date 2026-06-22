@@ -6,9 +6,19 @@
     <string name="import_config">导入配置</string>
     <string name="export_config">导出配置</string>
     <string name="edit_target_pkg">目标应用包名</string>
-    <string name="edit_target_uri">快捷入口 (url)/目标类名 (activity)</string>
+    <string name="edit_target_uri">快捷入口 (url) / 目标类名 (activity)</string>
     <string name="pick_installed_app">选择应用</string>
     <string name="test_rule">模拟测试</string>
     <string name="save">保存</string>
     <string name="cancel">取消</string>
+
+    <!-- New M3 strings -->
+    <string name="title_main">启动重定向</string>
+    <string name="title_add_rule">添加规则</string>
+    <string name="title_edit_rule">修改规则</string>
+    <string name="menu_restart_launcher">重启桌面</string>
+    <string name="menu_import">导入配置</string>
+    <string name="menu_export">导出配置</string>
+    <string name="empty_no_rules">暂无规则</string>
+    <string name="empty_no_rules_desc">点击右下角 + 添加第一条重定向规则</string>
 </resources>
