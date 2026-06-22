@@ -8,9 +8,11 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.os.Bundle;
 import android.text.TextUtils;
-import android.widget.Button;
-import android.widget.EditText;
 import android.widget.Toast;
+
+import com.google.android.material.appbar.MaterialToolbar;
+import com.google.android.material.button.MaterialButton;
+import com.google.android.material.textfield.TextInputEditText;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -25,8 +27,8 @@ public class EditActivity extends Activity {
     public static final String EXTRA_TEST_TARGET_PKG = "launchRedirector_test_pkg";
     public static final String EXTRA_TEST_TARGET_URI = "launchRedirector_test_uri";
 
-    private EditText etPkg;
-    private EditText etUri;
+    private TextInputEditText etPkg;
+    private TextInputEditText etUri;
     private String originalPkg;
     private PackageManager packageManager;
 
@@ -38,16 +40,23 @@ public class EditActivity extends Activity {
         packageManager = getPackageManager();
         etPkg = findViewById(R.id.edit_pkg);
         etUri = findViewById(R.id.edit_uri);
-        Button btnPickPkg = findViewById(R.id.btn_pick_pkg);
-        Button btnSave = findViewById(R.id.btn_save);
-        Button btnCancel = findViewById(R.id.btn_cancel);
-        Button btnTest = findViewById(R.id.btn_test);
+        MaterialButton btnPickPkg = findViewById(R.id.btn_pick_pkg);
+        MaterialButton btnSave = findViewById(R.id.btn_save);
+        MaterialButton btnCancel = findViewById(R.id.btn_cancel);
+        MaterialButton btnTest = findViewById(R.id.btn_test);
 
+        // Toolbar
+        MaterialToolbar toolbar = findViewById(R.id.toolbar);
         originalPkg = getIntent().getStringExtra("pkg");
         if (originalPkg != null) {
+            toolbar.setTitle(R.string.title_edit_rule);
             etPkg.setText(originalPkg);
-            etUri.setText(getSharedPreferences("redirect_config", Context.MODE_PRIVATE).getString(originalPkg, ""));
+            etUri.setText(getSharedPreferences("redirect_config", Context.MODE_PRIVATE)
+                    .getString(originalPkg, ""));
+        } else {
+            toolbar.setTitle(R.string.title_add_rule);
         }
+        toolbar.setNavigationOnClickListener(v -> finish());
 
         btnPickPkg.setOnClickListener(v -> showInstalledAppPicker());
         btnSave.setOnClickListener(v -> saveRule());
@@ -117,7 +126,8 @@ public class EditActivity extends Activity {
             return;
         }
 
-        android.content.SharedPreferences.Editor editor = getSharedPreferences("redirect_config", Context.MODE_PRIVATE).edit();
+        android.content.SharedPreferences.Editor editor = getSharedPreferences(
+                "redirect_config", Context.MODE_PRIVATE).edit();
         if (!TextUtils.isEmpty(originalPkg) && !originalPkg.equals(pkg)) {
             editor.remove(originalPkg);
         }
@@ -182,7 +192,8 @@ public class EditActivity extends Activity {
 
     private String getAppLabel(String pkg) {
         try {
-            CharSequence label = packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0));
+            CharSequence label = packageManager.getApplicationLabel(
+                    packageManager.getApplicationInfo(pkg, 0));
             if (!TextUtils.isEmpty(label)) {
                 return label.toString();
             }
