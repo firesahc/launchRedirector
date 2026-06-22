@@ -1,6 +1,5 @@
 package com.example.launchRedirector;
 
-import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
@@ -9,12 +8,18 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.view.LayoutInflater;
+import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.BaseAdapter;
-import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+
+import com.google.android.material.appbar.MaterialToolbar;
 
 import org.json.JSONObject;
 
@@ -33,14 +38,15 @@ import java.util.Map;
 
 import de.robv.android.xposed.XposedBridge;
 
-public class MainActivity extends Activity {
+public class MainActivity extends AppCompatActivity {
     private static final int REQUEST_CODE_EXPORT = 101;
     private static final int REQUEST_CODE_IMPORT = 102;
 
     private final List<RuleEntry> ruleEntries = new ArrayList<>();
     private SharedPreferences prefs;
-    private ListView listView;
+    private RecyclerView recyclerView;
     private RuleAdapter adapter;
+    private View emptyView;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -48,27 +54,45 @@ public class MainActivity extends Activity {
         setContentView(R.layout.activity_main);
 
         prefs = getSharedPreferences("redirect_config", Context.MODE_PRIVATE);
-        listView = findViewById(R.id.list_view);
+
+        // Toolbar
+        MaterialToolbar toolbar = findViewById(R.id.toolbar);
+        toolbar.inflateMenu(R.menu.main_overflow);
+        toolbar.setOnMenuItemClickListener(this::onMenuItemClick);
+
+        // RecyclerView
+        recyclerView = findViewById(R.id.recycler_view);
+        recyclerView.setLayoutManager(new LinearLayoutManager(this));
         adapter = new RuleAdapter();
-        listView.setAdapter(adapter);
+        recyclerView.setAdapter(adapter);
 
-        findViewById(R.id.btn_add).setOnClickListener(v -> startActivity(new Intent(this, EditActivity.class)));
-        findViewById(R.id.btn_apply).setOnClickListener(v -> restartLauncher());
-        findViewById(R.id.btn_export).setOnClickListener(v -> exportConfig());
-        findViewById(R.id.btn_import).setOnClickListener(v -> importConfig());
+        // Empty state
+        emptyView = findViewById(R.id.empty_view);
 
-        listView.setOnItemLongClickListener((parent, view, position, id) -> {
-            if (position >= 0 && position < ruleEntries.size()) {
-                showActionDialog(ruleEntries.get(position).pkg);
-            }
-            return true;
-        });
+        // FAB
+        findViewById(R.id.fab_add).setOnClickListener(v ->
+                startActivity(new Intent(this, EditActivity.class)));
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         refreshList();
+    }
+
+    private boolean onMenuItemClick(MenuItem item) {
+        int id = item.getItemId();
+        if (id == R.id.menu_restart) {
+            restartLauncher();
+            return true;
+        } else if (id == R.id.menu_import) {
+            importConfig();
+            return true;
+        } else if (id == R.id.menu_export) {
+            exportConfig();
+            return true;
+        }
+        return false;
     }
 
     private void refreshList() {
@@ -91,6 +115,11 @@ public class MainActivity extends Activity {
                 .comparing((RuleEntry e) -> getAppLabel(e.pkg), String.CASE_INSENSITIVE_ORDER)
                 .thenComparing(e -> e.pkg, String.CASE_INSENSITIVE_ORDER));
         adapter.notifyDataSetChanged();
+
+        // Show/hide empty state
+        boolean empty = ruleEntries.isEmpty();
+        emptyView.setVisibility(empty ? View.VISIBLE : View.GONE);
+        recyclerView.setVisibility(empty ? View.GONE : View.VISIBLE);
     }
 
     private void showActionDialog(String pkg) {
@@ -111,7 +140,8 @@ public class MainActivity extends Activity {
 
     private String getAppLabel(String pkg) {
         try {
-            CharSequence label = getPackageManager().getApplicationLabel(getPackageManager().getApplicationInfo(pkg, 0));
+            CharSequence label = getPackageManager().getApplicationLabel(
+                    getPackageManager().getApplicationInfo(pkg, 0));
             if (!TextUtils.isEmpty(label)) {
                 return label.toString();
             }
@@ -119,6 +149,13 @@ public class MainActivity extends Activity {
         }
         return pkg;
     }
+
+    private String getFirstChar(String label) {
+        if (TextUtils.isEmpty(label)) return "?";
+        return label.substring(0, 1);
+    }
+
+    // ── Restart / Import / Export (unchanged business logic) ──
 
     private void restartLauncher() {
         try {
@@ -218,54 +255,55 @@ public class MainActivity extends Activity {
         }
     }
 
-    private final class RuleAdapter extends BaseAdapter {
-        private final LayoutInflater inflater = LayoutInflater.from(MainActivity.this);
+    // ── RecyclerView Adapter ──
+
+    private final class RuleAdapter extends RecyclerView.Adapter<RuleAdapter.VH> {
+
+        @NonNull
+        @Override
+        public VH onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+            View view = LayoutInflater.from(parent.getContext())
+                    .inflate(R.layout.item_rule_entry, parent, false);
+            return new VH(view);
+        }
 
         @Override
-        public int getCount() {
+        public void onBindViewHolder(@NonNull VH holder, int position) {
+            RuleEntry entry = ruleEntries.get(position);
+            String label = getAppLabel(entry.pkg);
+            holder.tvIcon.setText(getFirstChar(label));
+            holder.tvTitle.setText(label);
+            holder.tvPkg.setText(entry.pkg);
+            holder.tvRule.setText(entry.rule);
+
+            holder.itemView.setOnLongClickListener(v -> {
+                showActionDialog(entry.pkg);
+                return true;
+            });
+        }
+
+        @Override
+        public int getItemCount() {
             return ruleEntries.size();
         }
 
-        @Override
-        public Object getItem(int position) {
-            return ruleEntries.get(position);
-        }
+        final class VH extends RecyclerView.ViewHolder {
+            final TextView tvIcon;
+            final TextView tvTitle;
+            final TextView tvPkg;
+            final TextView tvRule;
 
-        @Override
-        public long getItemId(int position) {
-            return position;
-        }
-
-        @Override
-        public View getView(int position, View convertView, ViewGroup parent) {
-            ViewHolder holder;
-            if (convertView == null) {
-                convertView = inflater.inflate(R.layout.item_rule_entry, parent, false);
-                holder = new ViewHolder(convertView);
-                convertView.setTag(holder);
-            } else {
-                holder = (ViewHolder) convertView.getTag();
+            VH(@NonNull View root) {
+                super(root);
+                tvIcon = root.findViewById(R.id.tv_item_icon);
+                tvTitle = root.findViewById(R.id.tv_item_title);
+                tvPkg = root.findViewById(R.id.tv_item_pkg);
+                tvRule = root.findViewById(R.id.tv_item_rule);
             }
-
-            RuleEntry entry = ruleEntries.get(position);
-            holder.tvTitle.setText(getAppLabel(entry.pkg));
-            holder.tvPkg.setText(entry.pkg);
-            holder.tvRule.setText(entry.rule);
-            return convertView;
         }
     }
 
-    private static final class ViewHolder {
-        final TextView tvTitle;
-        final TextView tvPkg;
-        final TextView tvRule;
-
-        ViewHolder(View root) {
-            tvTitle = root.findViewById(R.id.tv_item_title);
-            tvPkg = root.findViewById(R.id.tv_item_pkg);
-            tvRule = root.findViewById(R.id.tv_item_rule);
-        }
-    }
+    // ── Data class ──
 
     private static final class RuleEntry {
         final String pkg;
