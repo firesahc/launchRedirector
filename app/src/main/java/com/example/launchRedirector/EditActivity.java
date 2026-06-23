@@ -24,6 +24,9 @@ import java.util.Map;
 
 public class EditActivity extends AppCompatActivity {
 
+    /** Intent extra key for the target package name. */
+    public static final String EXTRA_PKG = "pkg";
+
     private TextInputEditText etPkg;
     private TextInputEditText etUri;
     private String originalPkg;
@@ -44,7 +47,7 @@ public class EditActivity extends AppCompatActivity {
 
         // Toolbar
         MaterialToolbar toolbar = findViewById(R.id.toolbar);
-        originalPkg = getIntent().getStringExtra("pkg");
+        originalPkg = getIntent().getStringExtra(EXTRA_PKG);
         if (originalPkg != null) {
             toolbar.setTitle(R.string.title_edit_rule);
             etPkg.setText(originalPkg);

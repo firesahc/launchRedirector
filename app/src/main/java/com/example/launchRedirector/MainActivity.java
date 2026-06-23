@@ -193,7 +193,7 @@ public class MainActivity extends AppCompatActivity {
                 .setMessage(String.format(getString(R.string.action_dialog_message), pkg, rule))
                 .setPositiveButton(R.string.action_modify, (dialog, which) -> {
                     Intent intent = new Intent(this, EditActivity.class);
-                    intent.putExtra("pkg", pkg);
+                    intent.putExtra(EditActivity.EXTRA_PKG, pkg);
                     startActivity(intent);
                 })
                 .setNegativeButton(R.string.action_delete, (dialog, which) -> {
