@@ -171,25 +171,15 @@ public class EditActivity extends AppCompatActivity {
             return;
         }
 
-        // Pre-check: verify the redirect target can be resolved locally
-        Intent probe = buildProbeIntent(pkg, uri);
-        if (packageManager.resolveActivity(probe, 0) == null) {
+        // Build the redirect intent directly and start it
+        Intent redirectIntent = buildRedirectIntent(pkg, uri);
+        if (packageManager.resolveActivity(redirectIntent, 0) == null) {
             Toast.makeText(this, R.string.edit_test_no_launcher_entry, Toast.LENGTH_LONG).show();
             return;
         }
-
-        Intent launcherIntent = buildLauncherIntent(pkg);
-        if (launcherIntent == null) {
-            Toast.makeText(this, R.string.edit_test_no_launcher_entry, Toast.LENGTH_LONG).show();
-            return;
-        }
-
-        launcherIntent.putExtra(MainHook.EXTRA_TEST_LAUNCH, true);
-        launcherIntent.putExtra(MainHook.EXTRA_TEST_TARGET_PKG, pkg);
-        launcherIntent.putExtra(MainHook.EXTRA_TEST_TARGET_URI, uri);
 
         try {
-            startActivity(launcherIntent);
+            startActivity(redirectIntent);
             Toast.makeText(this, R.string.edit_test_executing, Toast.LENGTH_SHORT).show();
         } catch (Exception e) {
             XposedBridge.log(TAG + ": 模拟测试启动失败 — " + pkg + " — " + e.getMessage());
@@ -197,38 +187,17 @@ public class EditActivity extends AppCompatActivity {
         }
     }
 
-    /** Constructs a redirect Intent for local validation only — does NOT include flags or extras. */
-    private Intent buildProbeIntent(String pkg, String uri) {
+    /** Constructs a redirect Intent with proper flags for direct launch. */
+    private Intent buildRedirectIntent(String pkg, String uri) {
+        Intent intent;
         if (uri.contains("://")) {
-            return new Intent(Intent.ACTION_VIEW, Uri.parse(uri));
+            intent = new Intent(Intent.ACTION_VIEW, Uri.parse(uri));
+        } else {
+            String cls = uri.startsWith(".") ? pkg + uri : uri;
+            intent = new Intent(Intent.ACTION_MAIN);
+            intent.setClassName(pkg, cls);
         }
-        String cls = uri.startsWith(".") ? pkg + uri : uri;
-        Intent intent = new Intent(Intent.ACTION_MAIN);
-        intent.setClassName(pkg, cls);
-        return intent;
-    }
-
-    private Intent buildLauncherIntent(String pkg) {
-        Intent launcherIntent = packageManager.getLaunchIntentForPackage(pkg);
-        if (launcherIntent != null) {
-            return launcherIntent;
-        }
-
-        Intent queryIntent = new Intent(Intent.ACTION_MAIN);
-        queryIntent.addCategory(Intent.CATEGORY_LAUNCHER);
-        queryIntent.setPackage(pkg);
-        List<ResolveInfo> resolveInfos = packageManager.queryIntentActivities(queryIntent, 0);
-        if (resolveInfos == null || resolveInfos.isEmpty()) {
-            return null;
-        }
-        ResolveInfo resolveInfo = resolveInfos.get(0);
-        if (resolveInfo.activityInfo == null) {
-            return null;
-        }
-
-        Intent intent = new Intent(Intent.ACTION_MAIN);
-        intent.addCategory(Intent.CATEGORY_LAUNCHER);
-        intent.setClassName(resolveInfo.activityInfo.packageName, resolveInfo.activityInfo.name);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         return intent;
     }
 
