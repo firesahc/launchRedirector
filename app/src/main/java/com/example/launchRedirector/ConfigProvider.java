@@ -48,16 +48,16 @@ public class ConfigProvider extends ContentProvider {
 
     @Override
     public Uri insert(Uri uri, ContentValues values) {
-        return null;
+        throw new UnsupportedOperationException("ConfigProvider is read-only");
     }
 
     @Override
     public int delete(Uri uri, String selection, String[] selectionArgs) {
-        return 0;
+        throw new UnsupportedOperationException("ConfigProvider is read-only");
     }
 
     @Override
     public int update(Uri uri, ContentValues values, String selection, String[] selectionArgs) {
-        return 0;
+        throw new UnsupportedOperationException("ConfigProvider is read-only");
     }
 }

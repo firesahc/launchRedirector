@@ -12,7 +12,7 @@
     <string name="title_main">启动重定向</string>
     <string name="title_add_rule">添加规则</string>
     <string name="title_edit_rule">修改规则</string>
-    <string name="menu_restart_launcher">重启桌面</string>
+    <string name="menu_restart">重启桌面</string>
     <string name="menu_import">导入配置</string>
     <string name="menu_export">导出配置</string>
     <string name="empty_no_rules">暂无规则</string>
@@ -23,4 +23,55 @@
     <!-- Edit screen section labels -->
     <string name="section_target_app">目标应用</string>
     <string name="section_redirect_target">跳转目标</string>
+
+    <!-- Restart launcher -->
+    <string name="restart_pending">正在重启桌面，请稍候…</string>
+    <string name="restart_no_scope">未配置作用域，请在 LSPosed 中设置</string>
+    <string name="restart_no_launcher">作用域中未检测到桌面应用</string>
+    <string name="restart_sent">已发送重启桌面命令</string>
+    <string name="restart_need_root">需要 Root 权限以重启桌面</string>
+    <string name="restart_no_permission">无权限执行 Root 命令</string>
+
+    <!-- Export / Import -->
+    <string name="export_success">成功导出 %d 条规则</string>
+    <string name="export_failed">导出失败，已输出错误日志</string>
+    <string name="import_failed_format">导入失败，文件格式错误</string>
+    <string name="import_no_changes">规则无变化，无需导入</string>
+    <string name="import_conflict_title">规则冲突（%d 条）</string>
+    <string name="import_conflict_desc">以下规则将被覆盖：\n%s\n…及其他 %d 条</string>
+    <string name="import_conflict_desc_short">以下规则将被覆盖：\n%s</string>
+    <string name="import_confirm_overwrite">确认覆盖</string>
+    <string name="import_success">成功导入 %d 条规则</string>
+    <string name="export_open_failed">无法打开导出文件</string>
+    <string name="import_open_failed">无法打开导入文件</string>
+
+    <!-- Action dialog -->
+    <string name="action_modify">修改</string>
+    <string name="action_delete">删除</string>
+    <string name="action_dialog_message">包名：%s\n规则：%s</string>
+
+    <!-- Log tags -->
+    <string name="log_su_failed" translatable="false">launchRedirector: su 执行失败 %s</string>
+    <string name="log_su_permission" translatable="false">launchRedirector: su 权限不足 %s</string>
+    <string name="log_export_failed" translatable="false">launchRedirector: 导出失败 %s</string>
+    <string name="log_import_failed" translatable="false">launchRedirector: 导入失败 %s</string>
+    <string name="log_config_query_error" translatable="false">launchRedirector: %s 规则查询出现错误 %s</string>
+
+    <!-- Edit screen -->
+    <string name="edit_no_launchable_apps">未找到可选择的已安装应用</string>
+    <string name="edit_pick_app_title">选择本机安装软件</string>
+    <string name="edit_pkg_empty">请输入目标应用包名</string>
+    <string name="edit_uri_empty">请输入跳转地址或类名</string>
+    <string name="edit_test_no_pkg">请先选择或输入包名</string>
+    <string name="edit_test_no_uri">请先填写自定义链接或类名</string>
+    <string name="edit_test_no_launcher_entry">未找到可启动入口，无法模拟桌面点击</string>
+    <string name="edit_test_launching">模拟桌面启动：%s</string>
+    <string name="edit_test_failed">模拟测试失败</string>
+
+    <!-- Import validation -->
+    <string name="import_invalid_title">无效规则（%d 条）</string>
+    <string name="import_invalid_desc_long">以下规则格式不正确，将被跳过：\n%s\n…及其他 %d 条</string>
+    <string name="import_invalid_desc_short">以下规则格式不正确，将被跳过：\n%s</string>
+    <string name="import_skip_and_continue">跳过并继续</string>
+    <string name="import_all_invalid">所有规则格式均无效，导入取消</string>
 </resources>

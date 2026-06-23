@@ -91,6 +91,6 @@
         android:contentDescription="@string/add_rule"
         app:fabCustomSize="56dp"
         app:srcCompat="@drawable/ic_add_24dp"
-        app:tint="@color/m3_on_primary_container" />
+        app:tint="?attr/colorOnPrimaryContainer" />
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>
