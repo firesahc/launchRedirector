@@ -457,7 +457,7 @@ public class MainActivity extends AppCompatActivity {
         }
 
         if (count > 0) {
-            editor.apply();
+            editor.commit();
         }
         refreshList();
         Toast.makeText(this, String.format(getString(R.string.import_success), count), Toast.LENGTH_SHORT).show();
