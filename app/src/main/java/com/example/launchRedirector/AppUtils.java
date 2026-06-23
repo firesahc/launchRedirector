@@ -6,8 +6,6 @@ import android.text.TextUtils;
 
 import java.util.regex.Pattern;
 
-import de.robv.android.xposed.XposedBridge;
-
 /**
  * Shared utility methods used across activities.
  */
@@ -17,8 +15,6 @@ public final class AppUtils {
 
     /** SharedPreferences file name for redirect rules. */
     public static final String PREF_NAME = "redirect_config";
-
-    private static final String TAG = "launchRedirector";
 
     // ── Validation patterns ──
 
@@ -53,7 +49,7 @@ public final class AppUtils {
                 return label.toString();
             }
         } catch (PackageManager.NameNotFoundException e) {
-            XposedBridge.log(TAG + ": App not found for label lookup: " + pkg);
+            // App not installed — use package name as label
         }
         return pkg;
     }

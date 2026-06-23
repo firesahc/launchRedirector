@@ -88,6 +88,7 @@ public class MainHook implements IXposedHookLoadPackage {
 
         if (TextUtils.isEmpty(redirectUri)) {
             if (testLaunch) {
+                XposedBridge.log(TAG + ": test launch blocked — no redirect rule for " + targetPkg);
                 param.setResult(null);
             }
             return;
@@ -101,6 +102,7 @@ public class MainHook implements IXposedHookLoadPackage {
         }
 
         if (!testLaunch && isAppRunning(context, targetPkg)) {
+            XposedBridge.log(TAG + ": " + targetPkg + " 已在运行，跳过重定向");
             return;
         }
 
@@ -121,6 +123,7 @@ public class MainHook implements IXposedHookLoadPackage {
             newIntent.putExtras(intent.getExtras());
         }
         param.args[4] = newIntent;
+        XposedBridge.log(TAG + ": " + targetPkg + " → " + redirectUri);
     }
 
     private boolean isAppRunning(Context context, String packageName) {

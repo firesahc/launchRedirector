@@ -259,6 +259,7 @@ public class MainActivity extends AppCompatActivity {
 
                 if (!p.waitFor(SU_TIMEOUT_SEC, TimeUnit.SECONDS)) {
                     p.destroyForcibly();
+                    XposedBridge.log(TAG + ": su 命令超时 (" + SU_TIMEOUT_SEC + "s)，已强制终止");
                 }
                 runOnUiThread(() ->
                         Toast.makeText(MainActivity.this, R.string.restart_sent, Toast.LENGTH_SHORT).show());
@@ -273,6 +274,7 @@ public class MainActivity extends AppCompatActivity {
                 });
                 XposedBridge.log(String.format(appCtx.getString(R.string.log_su_permission), e.getMessage()));
             } catch (InterruptedException e) {
+                XposedBridge.log(TAG + ": su 线程被中断");
                 Thread.currentThread().interrupt();
             } finally {
                 restarting = false;
@@ -399,12 +401,8 @@ public class MainActivity extends AppCompatActivity {
             String key = keys.next();
             String existingValue = prefs.getString(key, null);
             if (existingValue != null) {
-                try {
-                    if (!existingValue.equals(json.getString(key))) {
-                        conflicts.add(key);
-                    }
-                } catch (JSONException e) {
-                    XposedBridge.log(TAG + ": Conflict check failed for: " + key + " - " + e.getMessage());
+                if (!existingValue.equals(json.getString(key))) {
+                    conflicts.add(key);
                 }
             } else {
                 hasChanges = true;

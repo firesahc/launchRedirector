@@ -22,7 +22,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import de.robv.android.xposed.XposedBridge;
+
 public class EditActivity extends AppCompatActivity {
+
+    private static final String TAG = "launchRedirector";
 
     /** Intent extra key for the target package name. */
     public static final String EXTRA_PKG = "pkg";
@@ -139,7 +143,9 @@ public class EditActivity extends AppCompatActivity {
         if (!TextUtils.isEmpty(originalPkg) && !originalPkg.equals(pkg)) {
             editor.remove(originalPkg);
         }
-        editor.putString(pkg, uri).commit();
+        if (!editor.putString(pkg, uri).commit()) {
+            XposedBridge.log(TAG + ": commit() 返回 false，规则可能未保存 — " + pkg);
+        }
         finish();
     }
 
@@ -171,6 +177,7 @@ public class EditActivity extends AppCompatActivity {
             Toast.makeText(this, String.format(getString(R.string.edit_test_launching),
                     AppUtils.getAppLabel(this, pkg)), Toast.LENGTH_SHORT).show();
         } catch (Exception e) {
+            XposedBridge.log(TAG + ": 模拟测试启动失败 — " + pkg + " — " + e.getMessage());
             Toast.makeText(this, R.string.edit_test_failed, Toast.LENGTH_LONG).show();
         }
     }
