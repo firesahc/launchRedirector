@@ -1,7 +1,5 @@
 package com.example.launchRedirector;
 
-import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -11,8 +9,11 @@ import android.os.Bundle;
 import android.text.TextUtils;
 import android.widget.Toast;
 
+import androidx.appcompat.app.AppCompatActivity;
+
 import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.button.MaterialButton;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.textfield.TextInputEditText;
 
 import java.util.ArrayList;
@@ -21,7 +22,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-public class EditActivity extends Activity {
+public class EditActivity extends AppCompatActivity {
 
     private TextInputEditText etPkg;
     private TextInputEditText etUri;
@@ -63,7 +64,7 @@ public class EditActivity extends Activity {
     private void showInstalledAppPicker() {
         List<AppEntry> apps = loadLaunchableApps();
         if (apps.isEmpty()) {
-            Toast.makeText(this, "未找到可选择的已安装应用", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, R.string.edit_no_launchable_apps, Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -73,10 +74,10 @@ public class EditActivity extends Activity {
             items[i] = app.label + "  (" + app.pkg + ")";
         }
 
-        new AlertDialog.Builder(this)
-                .setTitle("选择本机安装软件")
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.edit_pick_app_title)
                 .setItems(items, (dialog, which) -> etPkg.setText(apps.get(which).pkg))
-                .setNegativeButton("取消", null)
+                .setNegativeButton(R.string.cancel, null)
                 .show();
     }
 
@@ -114,11 +115,19 @@ public class EditActivity extends Activity {
         String uri = etUri.getText().toString().trim();
 
         if (TextUtils.isEmpty(pkg)) {
-            Toast.makeText(this, "请输入目标应用包名", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, R.string.edit_pkg_empty, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (!AppUtils.isValidPkg(pkg)) {
+            Toast.makeText(this, "包名格式不正确，请输入合法的 Android 包名", Toast.LENGTH_SHORT).show();
             return;
         }
         if (TextUtils.isEmpty(uri)) {
-            Toast.makeText(this, "请输入跳转地址或类名", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, R.string.edit_uri_empty, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (!AppUtils.isValidRuleValue(uri)) {
+            Toast.makeText(this, "跳转地址格式不正确", Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -136,25 +145,30 @@ public class EditActivity extends Activity {
         String uri = etUri.getText().toString().trim();
 
         if (TextUtils.isEmpty(pkg)) {
-            Toast.makeText(this, "请先选择或输入包名", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, R.string.edit_test_no_pkg, Toast.LENGTH_SHORT).show();
             return;
         }
         if (TextUtils.isEmpty(uri)) {
-            Toast.makeText(this, "请先填写自定义链接或类名", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, R.string.edit_test_no_uri, Toast.LENGTH_SHORT).show();
             return;
         }
 
         Intent launcherIntent = buildLauncherIntent(pkg);
         if (launcherIntent == null) {
-            Toast.makeText(this, "未找到可启动入口，无法模拟桌面点击", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, R.string.edit_test_no_launcher_entry, Toast.LENGTH_LONG).show();
             return;
         }
 
+        launcherIntent.putExtra(MainHook.EXTRA_TEST_LAUNCH, true);
+        launcherIntent.putExtra(MainHook.EXTRA_TEST_TARGET_PKG, pkg);
+        launcherIntent.putExtra(MainHook.EXTRA_TEST_TARGET_URI, uri);
+
         try {
             startActivity(launcherIntent);
-            Toast.makeText(this, "模拟桌面启动：" + AppUtils.getAppLabel(this, pkg), Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, String.format(getString(R.string.edit_test_launching),
+                    AppUtils.getAppLabel(this, pkg)), Toast.LENGTH_SHORT).show();
         } catch (Exception e) {
-            Toast.makeText(this, "模拟测试失败", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, R.string.edit_test_failed, Toast.LENGTH_LONG).show();
         }
     }
 
