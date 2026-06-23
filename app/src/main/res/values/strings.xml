@@ -61,7 +61,9 @@
     <string name="edit_no_launchable_apps">未找到可选择的已安装应用</string>
     <string name="edit_pick_app_title">选择本机安装软件</string>
     <string name="edit_pkg_empty">请输入目标应用包名</string>
+    <string name="edit_pkg_invalid">包名格式不正确，请输入合法的 Android 包名</string>
     <string name="edit_uri_empty">请输入跳转地址或类名</string>
+    <string name="edit_uri_invalid">跳转地址格式不正确</string>
     <string name="edit_test_no_pkg">请先选择或输入包名</string>
     <string name="edit_test_no_uri">请先填写自定义链接或类名</string>
     <string name="edit_test_no_launcher_entry">未找到可启动入口，无法模拟桌面点击</string>
