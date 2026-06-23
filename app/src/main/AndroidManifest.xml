@@ -3,11 +3,6 @@
 
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
 
-    <!-- Custom permission: only system apps or same-signature apps can read redirect config -->
-    <permission
-        android:name="com.example.launchRedirector.permission.READ_CONFIG"
-        android:protectionLevel="signatureOrSystem" />
-
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -45,8 +40,7 @@
         <provider
             android:name=".ConfigProvider"
             android:authorities="com.example.launchRedirector"
-            android:exported="true"
-            android:readPermission="com.example.launchRedirector.permission.READ_CONFIG" />
+            android:exported="true" />
 
     </application>
 
