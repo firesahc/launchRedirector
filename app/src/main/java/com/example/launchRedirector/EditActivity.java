@@ -48,7 +48,7 @@ public class EditActivity extends AppCompatActivity {
         if (originalPkg != null) {
             toolbar.setTitle(R.string.title_edit_rule);
             etPkg.setText(originalPkg);
-            etUri.setText(getSharedPreferences("redirect_config", Context.MODE_PRIVATE)
+            etUri.setText(getSharedPreferences(AppUtils.PREF_NAME, Context.MODE_PRIVATE)
                     .getString(originalPkg, ""));
         } else {
             toolbar.setTitle(R.string.title_add_rule);
@@ -119,7 +119,7 @@ public class EditActivity extends AppCompatActivity {
             return;
         }
         if (!AppUtils.isValidPkg(pkg)) {
-            Toast.makeText(this, "包名格式不正确，请输入合法的 Android 包名", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, R.string.edit_pkg_invalid, Toast.LENGTH_SHORT).show();
             return;
         }
         if (TextUtils.isEmpty(uri)) {
@@ -127,16 +127,16 @@ public class EditActivity extends AppCompatActivity {
             return;
         }
         if (!AppUtils.isValidRuleValue(uri)) {
-            Toast.makeText(this, "跳转地址格式不正确", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, R.string.edit_uri_invalid, Toast.LENGTH_SHORT).show();
             return;
         }
 
         SharedPreferences.Editor editor = getSharedPreferences(
-                "redirect_config", Context.MODE_PRIVATE).edit();
+                AppUtils.PREF_NAME, Context.MODE_PRIVATE).edit();
         if (!TextUtils.isEmpty(originalPkg) && !originalPkg.equals(pkg)) {
             editor.remove(originalPkg);
         }
-        editor.putString(pkg, uri).apply();
+        editor.putString(pkg, uri).commit();
         finish();
     }
 
