@@ -10,7 +10,6 @@ import android.net.Uri;
 
 public class ConfigProvider extends ContentProvider {
 
-    private static final String PREF_NAME = "redirect_config";
     private static final String COLUMN_URI = "uri";
 
     @Override
@@ -30,7 +29,7 @@ public class ConfigProvider extends ContentProvider {
             return null;
         }
 
-        SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+        SharedPreferences prefs = context.getSharedPreferences(AppUtils.PREF_NAME, Context.MODE_PRIVATE);
         String redirectUri = prefs.getString(targetPkg, null);
         if (redirectUri == null || redirectUri.isEmpty()) {
             return null;
