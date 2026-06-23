@@ -10,6 +10,9 @@ import android.net.Uri;
 
 public class ConfigProvider extends ContentProvider {
 
+    /** ContentProvider authority — keep in sync with AndroidManifest.xml. */
+    public static final String AUTHORITY = "com.example.launchRedirector";
+
     private static final String COLUMN_URI = "uri";
 
     @Override

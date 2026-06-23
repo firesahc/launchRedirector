@@ -4,6 +4,8 @@ import android.app.Activity;
 import android.app.ActivityManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
@@ -25,7 +27,7 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
 public class MainHook implements IXposedHookLoadPackage {
 
     private static final String TAG = "launchRedirector";
-    private static final String CONTENT_URI = "content://com.example.launchRedirector/config/";
+    private static final String CONTENT_URI = "content://" + ConfigProvider.AUTHORITY + "/config/";
 
     /** Test-launch extras — consumed by this hook, produced by EditActivity. */
     public static final String EXTRA_TEST_LAUNCH = "launchRedirector_test_launch";
@@ -121,6 +123,12 @@ public class MainHook implements IXposedHookLoadPackage {
         // Forward any original extras (e.g. shortcut data) to the redirect target
         if (intent.getExtras() != null) {
             newIntent.putExtras(intent.getExtras());
+        }
+        // Verify the redirect target is resolvable before applying
+        PackageManager pm = context.getPackageManager();
+        if (pm.resolveActivity(newIntent, 0) == null) {
+            XposedBridge.log(TAG + ": " + targetPkg + " 重定向目标不可解析，回退: " + redirectUri);
+            return;
         }
         param.args[4] = newIntent;
         XposedBridge.log(TAG + ": " + targetPkg + " → " + redirectUri);

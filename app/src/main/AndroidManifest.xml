@@ -41,6 +41,7 @@
         </activity>
         <activity android:name=".EditActivity" />
 
+        <!-- authority must match ConfigProvider.AUTHORITY constant -->
         <provider
             android:name=".ConfigProvider"
             android:authorities="com.example.launchRedirector"
