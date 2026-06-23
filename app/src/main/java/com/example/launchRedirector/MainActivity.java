@@ -119,6 +119,12 @@ public class MainActivity extends AppCompatActivity {
         refreshList();
     }
 
+    @Override
+    protected void onDestroy() {
+        refreshExecutor.shutdown();
+        super.onDestroy();
+    }
+
     private boolean onMenuItemClick(MenuItem item) {
         int id = item.getItemId();
         if (id == R.id.menu_restart) {
