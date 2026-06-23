@@ -7,6 +7,7 @@ import android.content.pm.ResolveInfo;
 import android.net.Uri;
 import android.os.Bundle;
 import android.text.TextUtils;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.MenuItem;
 import android.view.View;
@@ -74,7 +75,7 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        prefs = getSharedPreferences("redirect_config", Context.MODE_PRIVATE);
+        prefs = getSharedPreferences(AppUtils.PREF_NAME, Context.MODE_PRIVATE);
 
         // --- Activity Result API (replaces deprecated startActivityForResult) ---
         exportLauncher = registerForActivityResult(
@@ -154,10 +155,11 @@ public class MainActivity extends AppCompatActivity {
         }
 
         // Background label computation via single-thread executor (avoids stale-thread race)
+        final Context appCtx = getApplicationContext();
         refreshExecutor.submit(() -> {
             Map<String, String> newCache = new HashMap<>();
             for (RuleEntry e : pending) {
-                newCache.put(e.pkg, AppUtils.getAppLabel(MainActivity.this, e.pkg));
+                newCache.put(e.pkg, AppUtils.getAppLabel(appCtx, e.pkg));
             }
 
             runOnUiThread(() -> {
@@ -189,7 +191,7 @@ public class MainActivity extends AppCompatActivity {
                     startActivity(intent);
                 })
                 .setNegativeButton(R.string.action_delete, (dialog, which) -> {
-                    prefs.edit().remove(pkg).apply();
+                    prefs.edit().remove(pkg).commit();
                     refreshList();
                 })
                 .setNeutralButton(R.string.cancel, null)
@@ -224,7 +226,7 @@ public class MainActivity extends AppCompatActivity {
 
         List<String> targets = new ArrayList<>();
         for (String pkg : scopePkgs) {
-            if (!TextUtils.isEmpty(pkg) && launcherPkgs.contains(pkg)) {
+            if (!TextUtils.isEmpty(pkg) && AppUtils.isValidPkg(pkg) && launcherPkgs.contains(pkg)) {
                 targets.add(pkg);
             }
         }
@@ -236,40 +238,39 @@ public class MainActivity extends AppCompatActivity {
 
         restarting = true;
 
-        try {
-            Process p = Runtime.getRuntime().exec("su");
-            try (DataOutputStream os = new DataOutputStream(p.getOutputStream())) {
-                for (String pkg : targets) {
-                    os.writeBytes("am force-stop " + pkg + "\n");
-                    os.writeBytes("killall " + pkg + "\n");
-                }
-                os.writeBytes("exit\n");
-                os.flush();
-            }
-
-            new Thread(() -> {
-                try {
-                    if (!p.waitFor(SU_TIMEOUT_SEC, TimeUnit.SECONDS)) {
-                        p.destroyForcibly();
+        // Offload su execution to background thread — avoids blocking UI
+        new Thread(() -> {
+            try {
+                Process p = Runtime.getRuntime().exec("su");
+                try (DataOutputStream os = new DataOutputStream(p.getOutputStream())) {
+                    for (String pkg : targets) {
+                        os.writeBytes("am force-stop " + pkg + "\n");
                     }
-                } catch (InterruptedException e) {
-                    p.destroyForcibly();
-                    Thread.currentThread().interrupt();
-                } finally {
-                    restarting = false;
+                    os.writeBytes("exit\n");
+                    os.flush();
                 }
-            }).start();
 
-            Toast.makeText(this, R.string.restart_sent, Toast.LENGTH_SHORT).show();
-        } catch (IOException e) {
-            restarting = false;
-            Toast.makeText(this, R.string.restart_need_root, Toast.LENGTH_SHORT).show();
-            XposedBridge.log(String.format(getString(R.string.log_su_failed), e.getMessage()));
-        } catch (SecurityException e) {
-            restarting = false;
-            Toast.makeText(this, R.string.restart_no_permission, Toast.LENGTH_SHORT).show();
-            XposedBridge.log(String.format(getString(R.string.log_su_permission), e.getMessage()));
-        }
+                if (!p.waitFor(SU_TIMEOUT_SEC, TimeUnit.SECONDS)) {
+                    p.destroyForcibly();
+                }
+                runOnUiThread(() ->
+                        Toast.makeText(MainActivity.this, R.string.restart_sent, Toast.LENGTH_SHORT).show());
+            } catch (IOException e) {
+                runOnUiThread(() -> {
+                    Toast.makeText(MainActivity.this, R.string.restart_need_root, Toast.LENGTH_SHORT).show();
+                });
+                XposedBridge.log(String.format(getString(R.string.log_su_failed), e.getMessage()));
+            } catch (SecurityException e) {
+                runOnUiThread(() -> {
+                    Toast.makeText(MainActivity.this, R.string.restart_no_permission, Toast.LENGTH_SHORT).show();
+                });
+                XposedBridge.log(String.format(getString(R.string.log_su_permission), e.getMessage()));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                restarting = false;
+            }
+        }).start();
     }
 
     private void exportConfig() {
@@ -345,7 +346,8 @@ public class MainActivity extends AppCompatActivity {
                     continue;
                 }
                 validJson.put(key, value);
-            } catch (JSONException ignored) {
+            } catch (JSONException e) {
+                Log.w("launchRedirector", "Invalid value for key: " + key, e);
                 invalidEntries.add(key);
             }
         }
@@ -394,7 +396,9 @@ public class MainActivity extends AppCompatActivity {
                     if (!existingValue.equals(json.getString(key))) {
                         conflicts.add(key);
                     }
-                } catch (JSONException ignored) {}
+                } catch (JSONException e) {
+                    Log.w("launchRedirector", "Conflict check failed for: " + key, e);
+                }
             } else {
                 hasChanges = true;
             }
@@ -447,7 +451,9 @@ public class MainActivity extends AppCompatActivity {
                     editor.putString(key, newValue);
                     count++;
                 }
-            } catch (JSONException ignored) {}
+            } catch (JSONException e) {
+                Log.w("launchRedirector", "Import failed for key: " + key, e);
+            }
         }
 
         if (count > 0) {
