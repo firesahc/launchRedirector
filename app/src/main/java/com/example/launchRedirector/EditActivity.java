@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.net.Uri;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.widget.Toast;
@@ -157,8 +158,23 @@ public class EditActivity extends AppCompatActivity {
             Toast.makeText(this, R.string.edit_test_no_pkg, Toast.LENGTH_SHORT).show();
             return;
         }
+        if (!AppUtils.isValidPkg(pkg)) {
+            Toast.makeText(this, R.string.edit_pkg_invalid, Toast.LENGTH_SHORT).show();
+            return;
+        }
         if (TextUtils.isEmpty(uri)) {
             Toast.makeText(this, R.string.edit_test_no_uri, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (!AppUtils.isValidRuleValue(uri)) {
+            Toast.makeText(this, R.string.edit_uri_invalid, Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // Pre-check: verify the redirect target can be resolved locally
+        Intent probe = buildProbeIntent(pkg, uri);
+        if (packageManager.resolveActivity(probe, 0) == null) {
+            Toast.makeText(this, R.string.edit_test_no_launcher_entry, Toast.LENGTH_LONG).show();
             return;
         }
 
@@ -174,12 +190,22 @@ public class EditActivity extends AppCompatActivity {
 
         try {
             startActivity(launcherIntent);
-            Toast.makeText(this, String.format(getString(R.string.edit_test_launching),
-                    AppUtils.getAppLabel(this, pkg)), Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, R.string.edit_test_executing, Toast.LENGTH_SHORT).show();
         } catch (Exception e) {
             XposedBridge.log(TAG + ": 模拟测试启动失败 — " + pkg + " — " + e.getMessage());
             Toast.makeText(this, R.string.edit_test_failed, Toast.LENGTH_LONG).show();
         }
+    }
+
+    /** Constructs a redirect Intent for local validation only — does NOT include flags or extras. */
+    private Intent buildProbeIntent(String pkg, String uri) {
+        if (uri.contains("://")) {
+            return new Intent(Intent.ACTION_VIEW, Uri.parse(uri));
+        }
+        String cls = uri.startsWith(".") ? pkg + uri : uri;
+        Intent intent = new Intent(Intent.ACTION_MAIN);
+        intent.setClassName(pkg, cls);
+        return intent;
     }
 
     private Intent buildLauncherIntent(String pkg) {

@@ -68,6 +68,7 @@
     <string name="edit_test_no_uri">请先填写自定义链接或类名</string>
     <string name="edit_test_no_launcher_entry">未找到可启动入口，无法模拟桌面点击</string>
     <string name="edit_test_launching">模拟桌面启动：%s</string>
+    <string name="edit_test_executing">执行测试</string>
     <string name="edit_test_failed">模拟测试失败</string>
 
     <!-- Import validation -->
