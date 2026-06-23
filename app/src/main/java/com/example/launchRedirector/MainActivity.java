@@ -18,7 +18,9 @@ import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.ListAdapter;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.material.appbar.MaterialToolbar;
@@ -42,6 +44,8 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import de.robv.android.xposed.XposedBridge;
@@ -49,13 +53,13 @@ import de.robv.android.xposed.XposedBridge;
 public class MainActivity extends AppCompatActivity {
     private static final int SU_TIMEOUT_SEC = 5;
 
-    private final List<RuleEntry> ruleEntries = new ArrayList<>();
     private final Map<String, String> labelCache = new HashMap<>();
     private SharedPreferences prefs;
     private RecyclerView recyclerView;
     private RuleAdapter adapter;
     private volatile boolean restarting = false;
     private View emptyView;
+    private final ExecutorService refreshExecutor = Executors.newSingleThreadExecutor();
 
     private ActivityResultLauncher<Intent> exportLauncher;
     private ActivityResultLauncher<Intent> importLauncher;
@@ -97,7 +101,7 @@ public class MainActivity extends AppCompatActivity {
         // RecyclerView
         recyclerView = findViewById(R.id.recycler_view);
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
-        adapter = new RuleAdapter(ruleEntries, this::showActionDialog, labelCache);
+        adapter = new RuleAdapter(this::showActionDialog, labelCache);
         recyclerView.setAdapter(adapter);
 
         // Empty state
@@ -130,7 +134,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void refreshList() {
-        ruleEntries.clear();
         Map<String, ?> allEntries = prefs.getAll();
 
         List<RuleEntry> pending = new ArrayList<>();
@@ -146,12 +149,12 @@ public class MainActivity extends AppCompatActivity {
         if (pending.isEmpty()) {
             emptyView.setVisibility(View.VISIBLE);
             recyclerView.setVisibility(View.GONE);
-            adapter.notifyDataSetChanged();
+            adapter.submitList(null);
             return;
         }
 
-        // Background label computation, guarded against Activity destruction
-        new Thread(() -> {
+        // Background label computation via single-thread executor (avoids stale-thread race)
+        refreshExecutor.submit(() -> {
             Map<String, String> newCache = new HashMap<>();
             for (RuleEntry e : pending) {
                 newCache.put(e.pkg, AppUtils.getAppLabel(MainActivity.this, e.pkg));
@@ -162,16 +165,15 @@ public class MainActivity extends AppCompatActivity {
 
                 labelCache.clear();
                 labelCache.putAll(newCache);
-                ruleEntries.addAll(pending);
-                ruleEntries.sort(Comparator
+                pending.sort(Comparator
                     .comparing((RuleEntry e) -> newCache.getOrDefault(e.pkg, e.pkg),
                                String.CASE_INSENSITIVE_ORDER)
                     .thenComparing(e -> e.pkg, String.CASE_INSENSITIVE_ORDER));
                 emptyView.setVisibility(View.GONE);
                 recyclerView.setVisibility(View.VISIBLE);
-                adapter.notifyDataSetChanged();
+                adapter.submitList(pending);
             });
-        }).start();
+        });
     }
 
     private void showActionDialog(String pkg) {
@@ -180,17 +182,17 @@ public class MainActivity extends AppCompatActivity {
 
         new MaterialAlertDialogBuilder(this)
                 .setTitle(label)
-                .setMessage("包名：" + pkg + "\n规则：" + rule)
-                .setPositiveButton("修改", (dialog, which) -> {
+                .setMessage(String.format(getString(R.string.action_dialog_message), pkg, rule))
+                .setPositiveButton(R.string.action_modify, (dialog, which) -> {
                     Intent intent = new Intent(this, EditActivity.class);
                     intent.putExtra("pkg", pkg);
                     startActivity(intent);
                 })
-                .setNegativeButton("删除", (dialog, which) -> {
+                .setNegativeButton(R.string.action_delete, (dialog, which) -> {
                     prefs.edit().remove(pkg).apply();
                     refreshList();
                 })
-                .setNeutralButton("取消", null)
+                .setNeutralButton(R.string.cancel, null)
                 .show();
     }
 
@@ -198,13 +200,13 @@ public class MainActivity extends AppCompatActivity {
 
     private void restartLauncher() {
         if (restarting) {
-            Toast.makeText(this, "正在重启桌面，请稍候…", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, R.string.restart_pending, Toast.LENGTH_SHORT).show();
             return;
         }
 
         String[] scopePkgs = getResources().getStringArray(R.array.xposed_scope);
         if (scopePkgs == null || scopePkgs.length == 0) {
-            Toast.makeText(this, "未配置作用域，请在 LSPosed 中设置", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, R.string.restart_no_scope, Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -228,7 +230,7 @@ public class MainActivity extends AppCompatActivity {
         }
 
         if (targets.isEmpty()) {
-            Toast.makeText(this, "作用域中未检测到桌面应用", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, R.string.restart_no_launcher, Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -258,15 +260,15 @@ public class MainActivity extends AppCompatActivity {
                 }
             }).start();
 
-            Toast.makeText(this, "已发送重启桌面命令", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, R.string.restart_sent, Toast.LENGTH_SHORT).show();
         } catch (IOException e) {
             restarting = false;
-            Toast.makeText(this, "需要 Root 权限以重启桌面", Toast.LENGTH_SHORT).show();
-            XposedBridge.log("launchRedirector: su 执行失败 " + e.getMessage());
+            Toast.makeText(this, R.string.restart_need_root, Toast.LENGTH_SHORT).show();
+            XposedBridge.log(String.format(getString(R.string.log_su_failed), e.getMessage()));
         } catch (SecurityException e) {
             restarting = false;
-            Toast.makeText(this, "无权限执行 Root 命令", Toast.LENGTH_SHORT).show();
-            XposedBridge.log("launchRedirector: su 权限不足 " + e.getMessage());
+            Toast.makeText(this, R.string.restart_no_permission, Toast.LENGTH_SHORT).show();
+            XposedBridge.log(String.format(getString(R.string.log_su_permission), e.getMessage()));
         }
     }
 
@@ -292,15 +294,15 @@ public class MainActivity extends AppCompatActivity {
 
             try (OutputStream os = getContentResolver().openOutputStream(uri)) {
                 if (os == null) {
-                    throw new IllegalStateException("无法打开导出文件");
+                    throw new IllegalStateException(getString(R.string.export_open_failed));
                 }
                 os.write(json.toString(4).getBytes(StandardCharsets.UTF_8));
             }
 
-            Toast.makeText(this, "成功导出 " + allEntries.size() + " 条规则", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, String.format(getString(R.string.export_success), allEntries.size()), Toast.LENGTH_SHORT).show();
         } catch (Exception e) {
-            XposedBridge.log("launchRedirector: 导出失败 " + e.getMessage());
-            Toast.makeText(this, "导出失败，已输出错误日志", Toast.LENGTH_LONG).show();
+            XposedBridge.log(String.format(getString(R.string.log_export_failed), e.getMessage()));
+            Toast.makeText(this, R.string.export_failed, Toast.LENGTH_LONG).show();
         }
     }
 
@@ -310,7 +312,7 @@ public class MainActivity extends AppCompatActivity {
             StringBuilder sb = new StringBuilder();
             try (InputStream is = getContentResolver().openInputStream(uri)) {
                 if (is == null) {
-                    throw new IllegalStateException("无法打开导入文件");
+                    throw new IllegalStateException(getString(R.string.import_open_failed));
                 }
                 try (BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
                     String line;
@@ -321,12 +323,66 @@ public class MainActivity extends AppCompatActivity {
             }
             json = new JSONObject(sb.toString());
         } catch (Exception e) {
-            XposedBridge.log("launchRedirector: 导入失败 " + e.getMessage());
-            Toast.makeText(this, "导入失败，文件格式错误", Toast.LENGTH_LONG).show();
+            XposedBridge.log(String.format(getString(R.string.log_import_failed), e.getMessage()));
+            Toast.makeText(this, R.string.import_failed_format, Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        // Phase 0: validate rules format
+        List<String> invalidEntries = new ArrayList<>();
+        JSONObject validJson = new JSONObject();
+        Iterator<String> allKeys = json.keys();
+        while (allKeys.hasNext()) {
+            String key = allKeys.next();
+            if (!AppUtils.isValidPkg(key)) {
+                invalidEntries.add(key);
+                continue;
+            }
+            try {
+                String value = json.getString(key);
+                if (!AppUtils.isValidRuleValue(value)) {
+                    invalidEntries.add(key + " → " + value);
+                    continue;
+                }
+                validJson.put(key, value);
+            } catch (JSONException ignored) {
+                invalidEntries.add(key);
+            }
+        }
+
+        // Report invalid entries
+        if (!invalidEntries.isEmpty()) {
+            if (validJson.length() == 0) {
+                Toast.makeText(this, R.string.import_all_invalid, Toast.LENGTH_SHORT).show();
+                return;
+            }
+            int showCount = Math.min(invalidEntries.size(), 5);
+            String invalidList = TextUtils.join("\n", invalidEntries.subList(0, showCount));
+            String title;
+            String message;
+            if (invalidEntries.size() > 5) {
+                title = String.format(getString(R.string.import_invalid_title), invalidEntries.size());
+                message = String.format(getString(R.string.import_invalid_desc_long),
+                    invalidList, invalidEntries.size() - 5);
+            } else {
+                title = String.format(getString(R.string.import_invalid_title), invalidEntries.size());
+                message = String.format(getString(R.string.import_invalid_desc_short), invalidList);
+            }
+            new MaterialAlertDialogBuilder(this)
+                .setTitle(title)
+                .setMessage(message)
+                .setPositiveButton(R.string.import_skip_and_continue, (d, w) -> proceedImport(validJson))
+                .setNegativeButton(R.string.cancel, null)
+                .show();
             return;
         }
 
         // Phase 1: detect conflicts
+        proceedImport(validJson);
+    }
+
+    /** Continues import after validation passes. Extracted to avoid nesting. */
+    private void proceedImport(JSONObject json) {
         List<String> conflicts = new ArrayList<>();
         boolean hasChanges = false;
         Iterator<String> keys = json.keys();
@@ -348,21 +404,28 @@ public class MainActivity extends AppCompatActivity {
         // Phase 2: confirm and execute
         final JSONObject finalJson = json;
         if (conflicts.isEmpty() && !hasChanges) {
-            Toast.makeText(this, "规则无变化，无需导入", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, R.string.import_no_changes, Toast.LENGTH_SHORT).show();
             return;
         }
 
         if (!conflicts.isEmpty()) {
             int showCount = Math.min(conflicts.size(), 5);
             String conflictList = TextUtils.join("\n", conflicts.subList(0, showCount));
+            String title;
+            String message;
             if (conflicts.size() > 5) {
-                conflictList += "\n…及其他 " + (conflicts.size() - 5) + " 条";
+                title = String.format(getString(R.string.import_conflict_title), conflicts.size());
+                message = String.format(getString(R.string.import_conflict_desc),
+                    conflictList, conflicts.size() - 5);
+            } else {
+                title = String.format(getString(R.string.import_conflict_title), conflicts.size());
+                message = String.format(getString(R.string.import_conflict_desc_short), conflictList);
             }
             new MaterialAlertDialogBuilder(this)
-                .setTitle("规则冲突（" + conflicts.size() + " 条）")
-                .setMessage("以下规则将被覆盖：\n" + conflictList)
-                .setPositiveButton("确认覆盖", (d, w) -> doImport(finalJson))
-                .setNegativeButton("取消", null)
+                .setTitle(title)
+                .setMessage(message)
+                .setPositiveButton(R.string.import_confirm_overwrite, (d, w) -> doImport(finalJson))
+                .setNegativeButton(R.string.cancel, null)
                 .show();
         } else {
             doImport(finalJson);
@@ -391,19 +454,32 @@ public class MainActivity extends AppCompatActivity {
             editor.apply();
         }
         refreshList();
-        Toast.makeText(this, "成功导入 " + count + " 条规则", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, String.format(getString(R.string.import_success), count), Toast.LENGTH_SHORT).show();
     }
 
     // ── RecyclerView Adapter (static to avoid implicit Activity reference) ──
 
-    private static final class RuleAdapter extends RecyclerView.Adapter<RuleAdapter.VH> {
+    private static final DiffUtil.ItemCallback<RuleEntry> DIFF_CALLBACK =
+            new DiffUtil.ItemCallback<RuleEntry>() {
+                @Override
+                public boolean areItemsTheSame(@NonNull RuleEntry oldItem, @NonNull RuleEntry newItem) {
+                    return oldItem.pkg.equals(newItem.pkg);
+                }
 
-        private final List<RuleEntry> ruleEntries;
+                @Override
+                public boolean areContentsTheSame(@NonNull RuleEntry oldItem, @NonNull RuleEntry newItem) {
+                    return oldItem.pkg.equals(newItem.pkg)
+                            && oldItem.rule.equals(newItem.rule);
+                }
+            };
+
+    private static final class RuleAdapter extends ListAdapter<RuleEntry, RuleAdapter.VH> {
+
         private final OnRuleActionListener listener;
         private final Map<String, String> labelCache;
 
-        RuleAdapter(List<RuleEntry> ruleEntries, OnRuleActionListener listener, Map<String, String> labelCache) {
-            this.ruleEntries = ruleEntries;
+        RuleAdapter(OnRuleActionListener listener, Map<String, String> labelCache) {
+            super(DIFF_CALLBACK);
             this.listener = listener;
             this.labelCache = labelCache;
         }
@@ -418,7 +494,7 @@ public class MainActivity extends AppCompatActivity {
 
         @Override
         public void onBindViewHolder(@NonNull VH holder, int position) {
-            RuleEntry entry = ruleEntries.get(position);
+            RuleEntry entry = getItem(position);
             String label = labelCache.getOrDefault(entry.pkg, entry.pkg);
             holder.tvIcon.setText(AppUtils.getFirstChar(label));
             holder.tvTitle.setText(label);
@@ -429,11 +505,6 @@ public class MainActivity extends AppCompatActivity {
                 listener.onRuleLongClick(entry.pkg);
                 return true;
             });
-        }
-
-        @Override
-        public int getItemCount() {
-            return ruleEntries.size();
         }
 
         static final class VH extends RecyclerView.ViewHolder {

@@ -4,12 +4,36 @@ import android.content.Context;
 import android.content.pm.PackageManager;
 import android.text.TextUtils;
 
+import java.util.regex.Pattern;
+
 /**
  * Shared utility methods used across activities.
  */
 public final class AppUtils {
 
     private AppUtils() {}
+
+    // ── Validation patterns ──
+
+    /** Valid Android package name: at least one dot, segments start with letter/underscore. */
+    private static final Pattern PKG_PATTERN =
+            Pattern.compile("[a-zA-Z_][a-zA-Z0-9_]*(?:\\.[a-zA-Z_][a-zA-Z0-9_]*)+");
+
+    public static boolean isValidPkg(String pkg) {
+        return pkg != null && PKG_PATTERN.matcher(pkg).matches();
+    }
+
+    /** Rule value must be a URI (contains ://) or a valid class name (dotted or relative). */
+    private static final Pattern CLASS_NAME_PATTERN =
+            Pattern.compile("[a-zA-Z_][a-zA-Z0-9_]*(?:\\.[a-zA-Z_][a-zA-Z0-9_]*)+|\\.[a-zA-Z_][a-zA-Z0-9_]*(?:\\.[a-zA-Z_][a-zA-Z0-9_]*)*");
+
+    public static boolean isValidRuleValue(String value) {
+        if (value == null || value.isEmpty()) return false;
+        if (value.contains("://")) return true;
+        return CLASS_NAME_PATTERN.matcher(value).matches();
+    }
+
+    // ── Label helpers ──
 
     public static String getAppLabel(Context context, String pkg) {
         try {
@@ -27,9 +51,11 @@ public final class AppUtils {
 
     /**
      * Returns the first character of the label, or "?" if empty.
+     * Safe for supplementary Unicode characters (emoji, etc.).
      */
     public static String getFirstChar(String label) {
         if (TextUtils.isEmpty(label)) return "?";
-        return label.substring(0, 1);
+        int cp = label.codePointAt(0);
+        return new String(Character.toChars(cp));
     }
 }
