@@ -14,6 +14,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import de.robv.android.xposed.IXposedHookLoadPackage;
 import de.robv.android.xposed.XC_MethodHook;
@@ -35,6 +36,9 @@ public class MainHook implements IXposedHookLoadPackage {
             "com.miui.home"
             // add additional launcher packages here
     ));
+
+    /** Cache redirect lookups in the launcher process to avoid repeated IPC. */
+    private static final ConcurrentHashMap<String, String> REDIRECT_CACHE = new ConcurrentHashMap<>();
 
     @Override
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) {
@@ -73,6 +77,8 @@ public class MainHook implements IXposedHookLoadPackage {
 
         String targetPkg = intent.getComponent().getPackageName();
         if (!Intent.ACTION_MAIN.equals(intent.getAction())) return;
+        // Only intercept launcher icon taps, not arbitrary MAIN intents
+        if (!intent.hasCategory(Intent.CATEGORY_LAUNCHER)) return;
 
         boolean testLaunch = intent.getBooleanExtra(EXTRA_TEST_LAUNCH, false);
         String redirectUri = testLaunch
@@ -109,6 +115,10 @@ public class MainHook implements IXposedHookLoadPackage {
 
         newIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         newIntent.addFlags(Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+        // Forward any original extras (e.g. shortcut data) to the redirect target
+        if (intent.getExtras() != null) {
+            newIntent.putExtras(intent.getExtras());
+        }
         param.args[4] = newIntent;
     }
 
@@ -141,6 +151,10 @@ public class MainHook implements IXposedHookLoadPackage {
     }
 
     private String getRedirect(Context context, String targetPkg) {
+        // Check cache first (lives in launcher process, cleared on restart)
+        String cached = REDIRECT_CACHE.get(targetPkg);
+        if (cached != null) return cached;
+
         String redirectUri = null;
         try {
             Uri queryUri = Uri.parse(CONTENT_URI + targetPkg);
@@ -153,6 +167,12 @@ public class MainHook implements IXposedHookLoadPackage {
             }
         } catch (Exception e) {
             XposedBridge.log("launchRedirector: " + targetPkg + " 规则查询出现错误 " + e.getMessage());
+            return null; // Don't cache failures — allows retry after launcher restart
+        }
+
+        // Only cache successful lookups to avoid stale "no redirect" state
+        if (!TextUtils.isEmpty(redirectUri)) {
+            REDIRECT_CACHE.put(targetPkg, redirectUri);
         }
         return redirectUri;
     }
