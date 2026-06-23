@@ -3,6 +3,7 @@ package com.example.launchRedirector;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.text.TextUtils;
+import android.util.Log;
 
 import java.util.regex.Pattern;
 
@@ -12,6 +13,11 @@ import java.util.regex.Pattern;
 public final class AppUtils {
 
     private AppUtils() {}
+
+    /** SharedPreferences file name for redirect rules. */
+    public static final String PREF_NAME = "redirect_config";
+
+    private static final String TAG = "launchRedirector";
 
     // ── Validation patterns ──
 
@@ -23,9 +29,11 @@ public final class AppUtils {
         return pkg != null && PKG_PATTERN.matcher(pkg).matches();
     }
 
-    /** Rule value must be a URI (contains ://) or a valid class name (dotted or relative). */
+    /** Rule value must be a URI (contains ://), full/relative class name, or flat class name. */
     private static final Pattern CLASS_NAME_PATTERN =
-            Pattern.compile("[a-zA-Z_][a-zA-Z0-9_]*(?:\\.[a-zA-Z_][a-zA-Z0-9_]*)+|\\.[a-zA-Z_][a-zA-Z0-9_]*(?:\\.[a-zA-Z_][a-zA-Z0-9_]*)*");
+            Pattern.compile("[a-zA-Z_][a-zA-Z0-9_]*(?:\\.[a-zA-Z_][a-zA-Z0-9_]*)+"
+                    + "|\\.[a-zA-Z_][a-zA-Z0-9_]*(?:\\.[a-zA-Z_][a-zA-Z0-9_]*)*"
+                    + "|[a-zA-Z_][a-zA-Z0-9_]*");
 
     public static boolean isValidRuleValue(String value) {
         if (value == null || value.isEmpty()) return false;
@@ -43,8 +51,8 @@ public final class AppUtils {
             if (!TextUtils.isEmpty(label)) {
                 return label.toString();
             }
-        } catch (PackageManager.NameNotFoundException ignored) {
-            // App not installed or uninstalled - use package name as label
+        } catch (PackageManager.NameNotFoundException e) {
+            Log.w(TAG, "App not found for label lookup: " + pkg);
         }
         return pkg;
     }

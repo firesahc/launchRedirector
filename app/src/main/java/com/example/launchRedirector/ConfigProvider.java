@@ -43,7 +43,7 @@ public class ConfigProvider extends ContentProvider {
 
     @Override
     public String getType(Uri uri) {
-        return null;
+        return "vnd.android.cursor.item/vnd.example.redirect_rule";
     }
 
     @Override
