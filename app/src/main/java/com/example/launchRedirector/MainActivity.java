@@ -7,7 +7,6 @@ import android.content.pm.ResolveInfo;
 import android.net.Uri;
 import android.os.Bundle;
 import android.text.TextUtils;
-import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.MenuItem;
 import android.view.View;
@@ -52,6 +51,7 @@ import java.util.concurrent.TimeUnit;
 import de.robv.android.xposed.XposedBridge;
 
 public class MainActivity extends AppCompatActivity {
+    private static final String TAG = "launchRedirector";
     private static final int SU_TIMEOUT_SEC = 5;
 
     private final Map<String, String> labelCache = new HashMap<>();
@@ -354,7 +354,7 @@ public class MainActivity extends AppCompatActivity {
                 }
                 validJson.put(key, value);
             } catch (JSONException e) {
-                Log.w("launchRedirector", "Invalid value for key: " + key, e);
+                XposedBridge.log(TAG + ": Invalid value for key: " + key + " - " + e.getMessage());
                 invalidEntries.add(key);
             }
         }
@@ -404,7 +404,7 @@ public class MainActivity extends AppCompatActivity {
                         conflicts.add(key);
                     }
                 } catch (JSONException e) {
-                    Log.w("launchRedirector", "Conflict check failed for: " + key, e);
+                    XposedBridge.log(TAG + ": Conflict check failed for: " + key + " - " + e.getMessage());
                 }
             } else {
                 hasChanges = true;
@@ -459,7 +459,7 @@ public class MainActivity extends AppCompatActivity {
                     count++;
                 }
             } catch (JSONException e) {
-                Log.w("launchRedirector", "Import failed for key: " + key, e);
+                XposedBridge.log(TAG + ": Import failed for key: " + key + " - " + e.getMessage());
             }
         }
 

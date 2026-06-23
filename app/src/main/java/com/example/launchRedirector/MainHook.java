@@ -24,6 +24,7 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
 public class MainHook implements IXposedHookLoadPackage {
 
+    private static final String TAG = "launchRedirector";
     private static final String CONTENT_URI = "content://com.example.launchRedirector/config/";
 
     /** Test-launch extras — consumed by this hook, produced by EditActivity. */
@@ -61,7 +62,7 @@ public class MainHook implements IXposedHookLoadPackage {
                         try {
                             handleExecStartActivity(param);
                         } catch (Exception e) {
-                            XposedBridge.log("launchRedirector: hook error, falling back to original intent: "
+                            XposedBridge.log(TAG + ": hook error, falling back to original intent: "
                                     + e.getMessage());
                             // leave param.args[4] untouched → original intent proceeds
                         }
@@ -166,7 +167,7 @@ public class MainHook implements IXposedHookLoadPackage {
                 cursor.close();
             }
         } catch (Exception e) {
-            XposedBridge.log("launchRedirector: " + targetPkg + " 规则查询出现错误 " + e.getMessage());
+            XposedBridge.log(TAG + ": " + targetPkg + " 规则查询出现错误 " + e.getMessage());
             return null; // Don't cache failures — allows retry after launcher restart
         }
 

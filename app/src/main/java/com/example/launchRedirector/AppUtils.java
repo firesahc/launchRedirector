@@ -3,9 +3,10 @@ package com.example.launchRedirector;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.text.TextUtils;
-import android.util.Log;
 
 import java.util.regex.Pattern;
+
+import de.robv.android.xposed.XposedBridge;
 
 /**
  * Shared utility methods used across activities.
@@ -52,7 +53,7 @@ public final class AppUtils {
                 return label.toString();
             }
         } catch (PackageManager.NameNotFoundException e) {
-            Log.w(TAG, "App not found for label lookup: " + pkg);
+            XposedBridge.log(TAG + ": App not found for label lookup: " + pkg);
         }
         return pkg;
     }
