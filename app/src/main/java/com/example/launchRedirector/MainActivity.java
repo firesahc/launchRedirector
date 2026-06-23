@@ -50,6 +50,7 @@ public class MainActivity extends AppCompatActivity {
     private static final int SU_TIMEOUT_SEC = 5;
 
     private final List<RuleEntry> ruleEntries = new ArrayList<>();
+    private final Map<String, String> labelCache = new HashMap<>();
     private SharedPreferences prefs;
     private RecyclerView recyclerView;
     private RuleAdapter adapter;
@@ -96,7 +97,7 @@ public class MainActivity extends AppCompatActivity {
         // RecyclerView
         recyclerView = findViewById(R.id.recycler_view);
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
-        adapter = new RuleAdapter(ruleEntries, this::showActionDialog);
+        adapter = new RuleAdapter(ruleEntries, this::showActionDialog, labelCache);
         recyclerView.setAdapter(adapter);
 
         // Empty state
@@ -151,17 +152,19 @@ public class MainActivity extends AppCompatActivity {
 
         // Background label computation, guarded against Activity destruction
         new Thread(() -> {
-            Map<String, String> labelCache = new HashMap<>();
+            Map<String, String> newCache = new HashMap<>();
             for (RuleEntry e : pending) {
-                labelCache.put(e.pkg, AppUtils.getAppLabel(MainActivity.this, e.pkg));
+                newCache.put(e.pkg, AppUtils.getAppLabel(MainActivity.this, e.pkg));
             }
 
             runOnUiThread(() -> {
                 if (isFinishing() || isDestroyed()) return;
 
+                labelCache.clear();
+                labelCache.putAll(newCache);
                 ruleEntries.addAll(pending);
                 ruleEntries.sort(Comparator
-                    .comparing((RuleEntry e) -> labelCache.getOrDefault(e.pkg, e.pkg),
+                    .comparing((RuleEntry e) -> newCache.getOrDefault(e.pkg, e.pkg),
                                String.CASE_INSENSITIVE_ORDER)
                     .thenComparing(e -> e.pkg, String.CASE_INSENSITIVE_ORDER));
                 emptyView.setVisibility(View.GONE);
@@ -397,10 +400,12 @@ public class MainActivity extends AppCompatActivity {
 
         private final List<RuleEntry> ruleEntries;
         private final OnRuleActionListener listener;
+        private final Map<String, String> labelCache;
 
-        RuleAdapter(List<RuleEntry> ruleEntries, OnRuleActionListener listener) {
+        RuleAdapter(List<RuleEntry> ruleEntries, OnRuleActionListener listener, Map<String, String> labelCache) {
             this.ruleEntries = ruleEntries;
             this.listener = listener;
+            this.labelCache = labelCache;
         }
 
         @NonNull
@@ -414,7 +419,7 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public void onBindViewHolder(@NonNull VH holder, int position) {
             RuleEntry entry = ruleEntries.get(position);
-            String label = AppUtils.getAppLabel(holder.itemView.getContext(), entry.pkg);
+            String label = labelCache.getOrDefault(entry.pkg, entry.pkg);
             holder.tvIcon.setText(AppUtils.getFirstChar(label));
             holder.tvTitle.setText(label);
             holder.tvPkg.setText(entry.pkg);
