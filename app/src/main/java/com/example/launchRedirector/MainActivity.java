@@ -245,6 +245,7 @@ public class MainActivity extends AppCompatActivity {
         restarting = true;
 
         // Offload su execution to background thread — avoids blocking UI
+        final Context appCtx = getApplicationContext();
         new Thread(() -> {
             try {
                 Process p = Runtime.getRuntime().exec("su");
@@ -265,12 +266,12 @@ public class MainActivity extends AppCompatActivity {
                 runOnUiThread(() -> {
                     Toast.makeText(MainActivity.this, R.string.restart_need_root, Toast.LENGTH_SHORT).show();
                 });
-                XposedBridge.log(String.format(getString(R.string.log_su_failed), e.getMessage()));
+                XposedBridge.log(String.format(appCtx.getString(R.string.log_su_failed), e.getMessage()));
             } catch (SecurityException e) {
                 runOnUiThread(() -> {
                     Toast.makeText(MainActivity.this, R.string.restart_no_permission, Toast.LENGTH_SHORT).show();
                 });
-                XposedBridge.log(String.format(getString(R.string.log_su_permission), e.getMessage()));
+                XposedBridge.log(String.format(appCtx.getString(R.string.log_su_permission), e.getMessage()));
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             } finally {
