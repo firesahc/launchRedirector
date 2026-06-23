@@ -401,7 +401,12 @@ public class MainActivity extends AppCompatActivity {
             String key = keys.next();
             String existingValue = prefs.getString(key, null);
             if (existingValue != null) {
-                if (!existingValue.equals(json.getString(key))) {
+                try {
+                    if (!existingValue.equals(json.getString(key))) {
+                        conflicts.add(key);
+                    }
+                } catch (JSONException e) {
+                    // Phase 0 pre-validated — should never reach here
                     conflicts.add(key);
                 }
             } else {
