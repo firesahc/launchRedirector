@@ -5,17 +5,13 @@ import android.app.ActivityManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.content.pm.ResolveInfo;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.text.TextUtils;
 
-import java.util.Arrays;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import de.robv.android.xposed.IXposedHookLoadPackage;
@@ -28,25 +24,25 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
 public class MainHook implements IXposedHookLoadPackage {
 
     private static final String TAG = "launchRedirector";
-    private static final String CONTENT_URI = "content://" + ConfigProvider.AUTHORITY + "/config/";
+    private static final Uri VERSION_URI = new Uri.Builder()
+            .scheme("content")
+            .authority(ConfigProvider.AUTHORITY)
+            .appendPath(ConfigProvider.PATH_VERSION)
+            .build();
 
     /** Test-launch extras — consumed by this hook, produced by EditActivity. */
     public static final String EXTRA_TEST_LAUNCH = "launchRedirector_test_launch";
     public static final String EXTRA_TEST_TARGET_PKG = "launchRedirector_test_pkg";
     public static final String EXTRA_TEST_TARGET_URI = "launchRedirector_test_uri";
 
-    /** Launcher packages that this hook should activate in. */
-    private static final Set<String> SCOPE_PACKAGES = new HashSet<>(Arrays.asList(
-            "com.miui.home"
-            // add additional launcher packages here
-    ));
-
     /** Cache redirect lookups in the launcher process to avoid repeated IPC. */
-    private static final ConcurrentHashMap<String, String> REDIRECT_CACHE = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, RedirectRule> REDIRECT_CACHE =
+            new ConcurrentHashMap<>();
+    private static volatile long cachedVersion = -1L;
 
     @Override
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) {
-        if (!SCOPE_PACKAGES.contains(lpparam.packageName)) return;
+        if (!LauncherScope.contains(lpparam.packageName)) return;
 
         XposedHelpers.findAndHookMethod(
                 "android.app.Instrumentation",
@@ -85,11 +81,11 @@ public class MainHook implements IXposedHookLoadPackage {
         if (!intent.hasCategory(Intent.CATEGORY_LAUNCHER)) return;
 
         boolean testLaunch = intent.getBooleanExtra(EXTRA_TEST_LAUNCH, false);
-        String redirectUri = testLaunch
-                ? intent.getStringExtra(EXTRA_TEST_TARGET_URI)
+        RedirectRule rule = testLaunch
+                ? RedirectRule.parse(intent.getStringExtra(EXTRA_TEST_TARGET_URI))
                 : getRedirect(context, targetPkg);
 
-        if (TextUtils.isEmpty(redirectUri)) {
+        if (rule == null) {
             if (testLaunch) {
                 XposedBridge.log(TAG + ": test launch blocked — no redirect rule for " + targetPkg);
                 param.setResult(null);
@@ -109,30 +105,23 @@ public class MainHook implements IXposedHookLoadPackage {
             return;
         }
 
-        Intent newIntent;
-        if (redirectUri.contains("://")) {
-            newIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(redirectUri));
-        } else {
-            newIntent = new Intent();
-            String className = redirectUri.startsWith(".") ? redirectPkg + redirectUri : redirectUri;
-            newIntent.setClassName(redirectPkg, className);
-            newIntent.setAction(Intent.ACTION_MAIN);
-        }
-
-        newIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        newIntent.addFlags(Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+        Intent newIntent = RedirectIntentFactory.create(redirectPkg, rule);
         // Forward any original extras (e.g. shortcut data) to the redirect target
         if (intent.getExtras() != null) {
             newIntent.putExtras(intent.getExtras());
+            newIntent.removeExtra(EXTRA_TEST_LAUNCH);
+            newIntent.removeExtra(EXTRA_TEST_TARGET_PKG);
+            newIntent.removeExtra(EXTRA_TEST_TARGET_URI);
         }
         // Verify the redirect target is resolvable before applying
         PackageManager pm = context.getPackageManager();
         if (pm.resolveActivity(newIntent, 0) == null) {
-            XposedBridge.log(TAG + ": " + targetPkg + " 重定向目标不可解析，回退: " + redirectUri);
+            XposedBridge.log(TAG + ": " + targetPkg + " 重定向目标不可解析，回退: "
+                    + rule.getRawValue());
             return;
         }
         param.args[4] = newIntent;
-        XposedBridge.log(TAG + ": " + targetPkg + " → " + redirectUri);
+        XposedBridge.log(TAG + ": " + targetPkg + " → " + rule.getRawValue());
     }
 
     private boolean isAppRunning(Context context, String packageName) {
@@ -163,30 +152,66 @@ public class MainHook implements IXposedHookLoadPackage {
         return false;
     }
 
-    private String getRedirect(Context context, String targetPkg) {
-        // Check cache first (lives in launcher process, cleared on restart)
-        String cached = REDIRECT_CACHE.get(targetPkg);
-        if (cached != null) return cached;
+    private RedirectRule getRedirect(Context context, String targetPkg) {
+        boolean versionKnown = refreshCacheVersion(context);
 
-        String redirectUri = null;
+        if (versionKnown) {
+            RedirectRule cached = REDIRECT_CACHE.get(targetPkg);
+            if (cached != null) return cached;
+        } else {
+            REDIRECT_CACHE.remove(targetPkg);
+        }
+
+        RedirectRule rule = null;
         try {
-            Uri queryUri = Uri.parse(CONTENT_URI + targetPkg);
-            Cursor cursor = context.getContentResolver().query(queryUri, null, null, null, null);
-            if (cursor != null) {
-                if (cursor.moveToFirst()) {
-                    redirectUri = cursor.getString(0);
+            Uri queryUri = new Uri.Builder()
+                    .scheme("content")
+                    .authority(ConfigProvider.AUTHORITY)
+                    .appendPath(ConfigProvider.PATH_CONFIG)
+                    .appendPath(targetPkg)
+                    .build();
+            try (Cursor cursor = context.getContentResolver().query(queryUri, null, null, null, null)) {
+                if (cursor != null && cursor.moveToFirst()) {
+                    int ruleIndex = cursor.getColumnIndex(ConfigProvider.COLUMN_RULE);
+                    int versionIndex = cursor.getColumnIndex(ConfigProvider.COLUMN_VERSION);
+                    if (ruleIndex >= 0) {
+                        rule = RedirectRule.parse(cursor.getString(ruleIndex));
+                    }
+                    if (versionIndex >= 0) {
+                        updateCacheVersion(cursor.getLong(versionIndex));
+                    }
                 }
-                cursor.close();
             }
         } catch (Exception e) {
             XposedBridge.log(TAG + ": " + targetPkg + " 规则查询出现错误 " + e.getMessage());
-            return null; // Don't cache failures — allows retry after launcher restart
+            return null;
         }
 
-        // Only cache successful lookups to avoid stale "no redirect" state
-        if (!TextUtils.isEmpty(redirectUri)) {
-            REDIRECT_CACHE.put(targetPkg, redirectUri);
+        if (rule != null) {
+            REDIRECT_CACHE.put(targetPkg, rule);
         }
-        return redirectUri;
+        return rule;
+    }
+
+    private boolean refreshCacheVersion(Context context) {
+        try (Cursor cursor = context.getContentResolver().query(VERSION_URI, null, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                int versionIndex = cursor.getColumnIndex(ConfigProvider.COLUMN_VERSION);
+                if (versionIndex >= 0) {
+                    updateCacheVersion(cursor.getLong(versionIndex));
+                    return true;
+                }
+            }
+        } catch (Exception e) {
+            XposedBridge.log(TAG + ": 配置版本查询出现错误 " + e.getMessage());
+        }
+        return false;
+    }
+
+    private void updateCacheVersion(long version) {
+        if (version != cachedVersion) {
+            REDIRECT_CACHE.clear();
+            cachedVersion = version;
+        }
     }
 }
