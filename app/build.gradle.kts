@@ -10,8 +10,8 @@ android {
         applicationId = "com.example.launchRedirector"
         minSdk = 29
         targetSdk = 36
-        versionCode = 12
-        versionName = "9.0"
+        versionCode = 13
+        versionName = "10.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
