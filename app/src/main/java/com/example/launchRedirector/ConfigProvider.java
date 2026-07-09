@@ -3,17 +3,23 @@ package com.example.launchRedirector;
 import android.content.ContentProvider;
 import android.content.ContentValues;
 import android.content.Context;
-import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.database.MatrixCursor;
 import android.net.Uri;
+
+import java.util.List;
 
 public class ConfigProvider extends ContentProvider {
 
     /** ContentProvider authority — keep in sync with AndroidManifest.xml. */
     public static final String AUTHORITY = "com.example.launchRedirector";
 
-    private static final String COLUMN_URI = "uri";
+    public static final String PATH_CONFIG = "config";
+    public static final String PATH_VERSION = "version";
+
+    public static final String COLUMN_RULE = "rule";
+    public static final String COLUMN_KIND = "kind";
+    public static final String COLUMN_VERSION = "version";
 
     @Override
     public boolean onCreate() {
@@ -27,19 +33,31 @@ public class ConfigProvider extends ContentProvider {
             return null;
         }
 
-        String targetPkg = uri.getLastPathSegment();
-        if (targetPkg == null || targetPkg.isEmpty()) {
+        RuleRepository repository = new RuleRepository(context);
+        List<String> segments = uri.getPathSegments();
+        if (segments.size() == 1 && PATH_VERSION.equals(segments.get(0))) {
+            MatrixCursor cursor = new MatrixCursor(new String[]{COLUMN_VERSION}, 1);
+            cursor.addRow(new Object[]{repository.getVersion()});
+            return cursor;
+        }
+
+        if (segments.size() != 2 || !PATH_CONFIG.equals(segments.get(0))) {
             return null;
         }
 
-        SharedPreferences prefs = context.getSharedPreferences(AppUtils.PREF_NAME, Context.MODE_PRIVATE);
-        String redirectUri = prefs.getString(targetPkg, null);
-        if (redirectUri == null || redirectUri.isEmpty()) {
+        String targetPkg = segments.get(1);
+        if (!AppUtils.isValidPkg(targetPkg)) {
             return null;
         }
 
-        MatrixCursor cursor = new MatrixCursor(new String[]{COLUMN_URI}, 1);
-        cursor.addRow(new Object[]{redirectUri});
+        RedirectRule rule = repository.getRule(targetPkg);
+        if (rule == null) {
+            return null;
+        }
+
+        MatrixCursor cursor = new MatrixCursor(
+                new String[]{COLUMN_RULE, COLUMN_KIND, COLUMN_VERSION}, 1);
+        cursor.addRow(new Object[]{rule.getRawValue(), rule.getKind().name(), repository.getVersion()});
         return cursor;
     }
 

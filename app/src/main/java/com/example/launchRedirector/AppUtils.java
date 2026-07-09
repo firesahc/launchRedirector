@@ -26,16 +26,8 @@ public final class AppUtils {
         return pkg != null && PKG_PATTERN.matcher(pkg).matches();
     }
 
-    /** Rule value must be a URI (contains ://), full/relative class name, or flat class name. */
-    private static final Pattern CLASS_NAME_PATTERN =
-            Pattern.compile("[a-zA-Z_][a-zA-Z0-9_]*(?:\\.[a-zA-Z_][a-zA-Z0-9_]*)+"
-                    + "|\\.[a-zA-Z_][a-zA-Z0-9_]*(?:\\.[a-zA-Z_][a-zA-Z0-9_]*)*"
-                    + "|[a-zA-Z_][a-zA-Z0-9_]*");
-
     public static boolean isValidRuleValue(String value) {
-        if (value == null || value.isEmpty()) return false;
-        if (value.contains("://")) return true;
-        return CLASS_NAME_PATTERN.matcher(value).matches();
+        return RedirectRule.isValid(value);
     }
 
     // ── Label helpers ──
