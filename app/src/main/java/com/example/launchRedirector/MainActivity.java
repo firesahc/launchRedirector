@@ -2,8 +2,6 @@ package com.example.launchRedirector;
 
 import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
-import android.content.pm.ResolveInfo;
 import android.net.Uri;
 import android.os.Bundle;
 import android.text.TextUtils;
@@ -26,12 +24,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
-import org.json.JSONException;
-import org.json.JSONObject;
-
 import java.io.BufferedReader;
-import java.io.DataOutputStream;
-import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -39,14 +32,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 
 import de.robv.android.xposed.XposedBridge;
 
@@ -55,12 +44,12 @@ public class MainActivity extends AppCompatActivity {
     private static final int SU_TIMEOUT_SEC = 5;
 
     private final Map<String, String> labelCache = new HashMap<>();
-    private SharedPreferences prefs;
+    private RuleRepository repository;
     private RecyclerView recyclerView;
     private RuleAdapter adapter;
     private volatile boolean restarting = false;
     private View emptyView;
-    private final ExecutorService refreshExecutor = Executors.newSingleThreadExecutor();
+    private final ExecutorService ioExecutor = Executors.newSingleThreadExecutor();
 
     private ActivityResultLauncher<Intent> exportLauncher;
     private ActivityResultLauncher<Intent> importLauncher;
@@ -75,7 +64,7 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        prefs = getSharedPreferences(AppUtils.PREF_NAME, Context.MODE_PRIVATE);
+        repository = new RuleRepository(this);
 
         // --- Activity Result API (replaces deprecated startActivityForResult) ---
         exportLauncher = registerForActivityResult(
@@ -121,7 +110,7 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
-        refreshExecutor.shutdown();
+        ioExecutor.shutdown();
         super.onDestroy();
     }
 
@@ -141,42 +130,30 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void refreshList() {
-        Map<String, ?> allEntries = prefs.getAll();
-
-        List<RuleEntry> pending = new ArrayList<>();
-        for (Map.Entry<String, ?> entry : allEntries.entrySet()) {
-            String pkg = entry.getKey();
-            Object value = entry.getValue();
-            if (TextUtils.isEmpty(pkg) || value == null) continue;
-            String rule = String.valueOf(value);
-            if (TextUtils.isEmpty(rule)) continue;
-            pending.add(new RuleEntry(pkg, rule));
-        }
-
-        if (pending.isEmpty()) {
-            emptyView.setVisibility(View.VISIBLE);
-            recyclerView.setVisibility(View.GONE);
-            adapter.submitList(null);
-            return;
-        }
-
-        // Background label computation via single-thread executor (avoids stale-thread race)
         final Context appCtx = getApplicationContext();
-        refreshExecutor.submit(() -> {
+        ioExecutor.submit(() -> {
+            List<RuleEntry> pending = repository.getAllRules();
             Map<String, String> newCache = new HashMap<>();
             for (RuleEntry e : pending) {
                 newCache.put(e.pkg, AppUtils.getAppLabel(appCtx, e.pkg));
             }
+            pending.sort(Comparator
+                    .comparing((RuleEntry e) -> newCache.getOrDefault(e.pkg, e.pkg),
+                            String.CASE_INSENSITIVE_ORDER)
+                    .thenComparing(e -> e.pkg, String.CASE_INSENSITIVE_ORDER));
 
             runOnUiThread(() -> {
                 if (isFinishing() || isDestroyed()) return;
 
+                if (pending.isEmpty()) {
+                    emptyView.setVisibility(View.VISIBLE);
+                    recyclerView.setVisibility(View.GONE);
+                    adapter.submitList(new ArrayList<>());
+                    return;
+                }
+
                 labelCache.clear();
                 labelCache.putAll(newCache);
-                pending.sort(Comparator
-                    .comparing((RuleEntry e) -> newCache.getOrDefault(e.pkg, e.pkg),
-                               String.CASE_INSENSITIVE_ORDER)
-                    .thenComparing(e -> e.pkg, String.CASE_INSENSITIVE_ORDER));
                 emptyView.setVisibility(View.GONE);
                 recyclerView.setVisibility(View.VISIBLE);
                 adapter.submitList(pending);
@@ -186,7 +163,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void showActionDialog(String pkg) {
         String label = AppUtils.getAppLabel(this, pkg);
-        String rule = prefs.getString(pkg, "");
+        String rule = repository.getRawRule(pkg);
 
         new MaterialAlertDialogBuilder(this)
                 .setTitle(label)
@@ -197,8 +174,16 @@ public class MainActivity extends AppCompatActivity {
                     startActivity(intent);
                 })
                 .setNegativeButton(R.string.action_delete, (dialog, which) -> {
-                    prefs.edit().remove(pkg).commit();
-                    refreshList();
+                    ioExecutor.submit(() -> {
+                        boolean removed = repository.removeRule(pkg);
+                        runOnUiThread(() -> {
+                            if (isFinishing() || isDestroyed()) return;
+                            if (!removed) {
+                                Toast.makeText(this, R.string.delete_failed, Toast.LENGTH_LONG).show();
+                            }
+                            refreshList();
+                        });
+                    });
                 })
                 .setNeutralButton(R.string.cancel, null)
                 .show();
@@ -212,74 +197,55 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        String[] scopePkgs = getResources().getStringArray(R.array.xposed_scope);
-        if (scopePkgs == null || scopePkgs.length == 0) {
+        if (LauncherScope.getPackages().isEmpty()) {
             Toast.makeText(this, R.string.restart_no_scope, Toast.LENGTH_SHORT).show();
             return;
         }
 
-        Intent homeIntent = new Intent(Intent.ACTION_MAIN);
-        homeIntent.addCategory(Intent.CATEGORY_HOME);
-        List<ResolveInfo> homeResolves = getPackageManager().queryIntentActivities(homeIntent, 0);
-        Set<String> launcherPkgs = new HashSet<>();
-        if (homeResolves != null) {
-            for (ResolveInfo ri : homeResolves) {
-                if (ri.activityInfo != null && ri.activityInfo.packageName != null) {
-                    launcherPkgs.add(ri.activityInfo.packageName);
-                }
-            }
-        }
-
-        List<String> targets = new ArrayList<>();
-        for (String pkg : scopePkgs) {
-            if (!TextUtils.isEmpty(pkg) && AppUtils.isValidPkg(pkg) && launcherPkgs.contains(pkg)) {
-                targets.add(pkg);
-            }
-        }
-
-        if (targets.isEmpty()) {
-            Toast.makeText(this, R.string.restart_no_launcher, Toast.LENGTH_SHORT).show();
-            return;
-        }
-
         restarting = true;
-
-        // Offload su execution to background thread — avoids blocking UI
         final Context appCtx = getApplicationContext();
-        new Thread(() -> {
-            try {
-                Process p = Runtime.getRuntime().exec("su");
-                try (DataOutputStream os = new DataOutputStream(p.getOutputStream())) {
-                    for (String pkg : targets) {
-                        os.writeBytes("am force-stop " + pkg + "\n");
+        ioExecutor.submit(() -> {
+            List<String> targets = LauncherScope.findScopedHomePackages(appCtx.getPackageManager());
+            if (targets.isEmpty()) {
+                runOnUiThread(() -> {
+                    restarting = false;
+                    if (!isFinishing() && !isDestroyed()) {
+                        Toast.makeText(this, R.string.restart_no_launcher, Toast.LENGTH_SHORT).show();
                     }
-                    os.writeBytes("exit\n");
-                    os.flush();
-                }
-
-                if (!p.waitFor(SU_TIMEOUT_SEC, TimeUnit.SECONDS)) {
-                    p.destroyForcibly();
-                    XposedBridge.log(TAG + ": su 命令超时 (" + SU_TIMEOUT_SEC + "s)，已强制终止");
-                }
-                runOnUiThread(() ->
-                        Toast.makeText(MainActivity.this, R.string.restart_sent, Toast.LENGTH_SHORT).show());
-            } catch (IOException e) {
-                runOnUiThread(() -> {
-                    Toast.makeText(MainActivity.this, R.string.restart_need_root, Toast.LENGTH_SHORT).show();
                 });
-                XposedBridge.log(String.format(appCtx.getString(R.string.log_su_failed), e.getMessage()));
-            } catch (SecurityException e) {
-                runOnUiThread(() -> {
-                    Toast.makeText(MainActivity.this, R.string.restart_no_permission, Toast.LENGTH_SHORT).show();
-                });
-                XposedBridge.log(String.format(appCtx.getString(R.string.log_su_permission), e.getMessage()));
-            } catch (InterruptedException e) {
-                XposedBridge.log(TAG + ": su 线程被中断");
-                Thread.currentThread().interrupt();
-            } finally {
-                restarting = false;
+                return;
             }
-        }).start();
+
+            LauncherRestarter.Result result = LauncherRestarter.forceStop(targets, SU_TIMEOUT_SEC);
+            runOnUiThread(() -> {
+                restarting = false;
+                if (isFinishing() || isDestroyed()) return;
+
+                switch (result.status) {
+                    case SENT:
+                        Toast.makeText(this, R.string.restart_sent, Toast.LENGTH_SHORT).show();
+                        break;
+                    case NEED_ROOT:
+                        Toast.makeText(this, R.string.restart_need_root, Toast.LENGTH_SHORT).show();
+                        XposedBridge.log(String.format(appCtx.getString(R.string.log_su_failed),
+                                result.message));
+                        break;
+                    case NO_PERMISSION:
+                        Toast.makeText(this, R.string.restart_no_permission, Toast.LENGTH_SHORT).show();
+                        XposedBridge.log(String.format(appCtx.getString(R.string.log_su_permission),
+                                result.message));
+                        break;
+                    case TIMEOUT:
+                        Toast.makeText(this, R.string.restart_timeout, Toast.LENGTH_SHORT).show();
+                        XposedBridge.log(TAG + ": su 命令超时 (" + SU_TIMEOUT_SEC + "s)，已强制终止");
+                        break;
+                    case INTERRUPTED:
+                        Toast.makeText(this, R.string.restart_interrupted, Toast.LENGTH_SHORT).show();
+                        XposedBridge.log(TAG + ": su 线程被中断");
+                        break;
+                }
+            });
+        });
     }
 
     private void exportConfig() {
@@ -298,179 +264,158 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void writeExportFile(Uri uri) {
-        try {
-            Map<String, ?> allEntries = prefs.getAll();
-            JSONObject json = new JSONObject(allEntries);
+        final Context appCtx = getApplicationContext();
+        ioExecutor.submit(() -> {
+            try {
+                List<RuleEntry> rules = repository.getAllRules();
+                String json = RuleImportExport.toJson(rules);
 
-            try (OutputStream os = getContentResolver().openOutputStream(uri)) {
-                if (os == null) {
-                    throw new IllegalStateException(getString(R.string.export_open_failed));
+                try (OutputStream os = getContentResolver().openOutputStream(uri)) {
+                    if (os == null) {
+                        throw new IllegalStateException(appCtx.getString(R.string.export_open_failed));
+                    }
+                    os.write(json.getBytes(StandardCharsets.UTF_8));
                 }
-                os.write(json.toString(4).getBytes(StandardCharsets.UTF_8));
-            }
 
-            Toast.makeText(this, String.format(getString(R.string.export_success), allEntries.size()), Toast.LENGTH_SHORT).show();
-        } catch (Exception e) {
-            XposedBridge.log(String.format(getString(R.string.log_export_failed), e.getMessage()));
-            Toast.makeText(this, R.string.export_failed, Toast.LENGTH_LONG).show();
-        }
+                runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    Toast.makeText(this,
+                            String.format(getString(R.string.export_success), rules.size()),
+                            Toast.LENGTH_SHORT).show();
+                });
+            } catch (Exception e) {
+                XposedBridge.log(String.format(appCtx.getString(R.string.log_export_failed),
+                        e.getMessage()));
+                runOnUiThread(() -> {
+                    if (!isFinishing() && !isDestroyed()) {
+                        Toast.makeText(this, R.string.export_failed, Toast.LENGTH_LONG).show();
+                    }
+                });
+            }
+        });
     }
 
     private void readImportFile(Uri uri) {
-        JSONObject json = null;
-        try {
-            StringBuilder sb = new StringBuilder();
-            try (InputStream is = getContentResolver().openInputStream(uri)) {
-                if (is == null) {
-                    throw new IllegalStateException(getString(R.string.import_open_failed));
-                }
-                try (BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        sb.append(line);
-                    }
-                }
-            }
-            json = new JSONObject(sb.toString());
-        } catch (Exception e) {
-            XposedBridge.log(String.format(getString(R.string.log_import_failed), e.getMessage()));
-            Toast.makeText(this, R.string.import_failed_format, Toast.LENGTH_LONG).show();
-            return;
-        }
-
-        // Phase 0: validate rules format
-        List<String> invalidEntries = new ArrayList<>();
-        JSONObject validJson = new JSONObject();
-        Iterator<String> allKeys = json.keys();
-        while (allKeys.hasNext()) {
-            String key = allKeys.next();
-            if (!AppUtils.isValidPkg(key)) {
-                invalidEntries.add(key);
-                continue;
-            }
+        final Context appCtx = getApplicationContext();
+        ioExecutor.submit(() -> {
             try {
-                String value = json.getString(key);
-                if (!AppUtils.isValidRuleValue(value)) {
-                    invalidEntries.add(key + " → " + value);
-                    continue;
+                String content = readText(uri, appCtx);
+                RuleImportExport.ImportPlan plan = RuleImportExport.parseImportPlan(
+                        content, repository.getRuleMap());
+                runOnUiThread(() -> handleImportPlan(plan));
+            } catch (Exception e) {
+                XposedBridge.log(String.format(appCtx.getString(R.string.log_import_failed),
+                        e.getMessage()));
+                runOnUiThread(() -> {
+                    if (!isFinishing() && !isDestroyed()) {
+                        Toast.makeText(this, R.string.import_failed_format, Toast.LENGTH_LONG).show();
+                    }
+                });
+            }
+        });
+    }
+
+    private String readText(Uri uri, Context appCtx) throws Exception {
+        StringBuilder sb = new StringBuilder();
+        try (InputStream is = getContentResolver().openInputStream(uri)) {
+            if (is == null) {
+                throw new IllegalStateException(appCtx.getString(R.string.import_open_failed));
+            }
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(is, StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    sb.append(line);
                 }
-                validJson.put(key, value);
-            } catch (JSONException e) {
-                XposedBridge.log(TAG + ": Invalid value for key: " + key + " - " + e.getMessage());
-                invalidEntries.add(key);
             }
         }
+        return sb.toString();
+    }
 
-        // Report invalid entries
-        if (!invalidEntries.isEmpty()) {
-            if (validJson.length() == 0) {
+    private void handleImportPlan(RuleImportExport.ImportPlan plan) {
+        if (isFinishing() || isDestroyed()) return;
+
+        if (!plan.invalidEntries.isEmpty()) {
+            if (plan.validRules.isEmpty()) {
                 Toast.makeText(this, R.string.import_all_invalid, Toast.LENGTH_SHORT).show();
                 return;
             }
-            int showCount = Math.min(invalidEntries.size(), 5);
-            String invalidList = TextUtils.join("\n", invalidEntries.subList(0, showCount));
+            int showCount = Math.min(plan.invalidEntries.size(), 5);
+            String invalidList = TextUtils.join("\n", plan.invalidEntries.subList(0, showCount));
             String title;
             String message;
-            if (invalidEntries.size() > 5) {
-                title = String.format(getString(R.string.import_invalid_title), invalidEntries.size());
+            if (plan.invalidEntries.size() > 5) {
+                title = String.format(getString(R.string.import_invalid_title),
+                        plan.invalidEntries.size());
                 message = String.format(getString(R.string.import_invalid_desc_long),
-                    invalidList, invalidEntries.size() - 5);
+                        invalidList, plan.invalidEntries.size() - 5);
             } else {
-                title = String.format(getString(R.string.import_invalid_title), invalidEntries.size());
+                title = String.format(getString(R.string.import_invalid_title),
+                        plan.invalidEntries.size());
                 message = String.format(getString(R.string.import_invalid_desc_short), invalidList);
             }
             new MaterialAlertDialogBuilder(this)
-                .setTitle(title)
-                .setMessage(message)
-                .setPositiveButton(R.string.import_skip_and_continue, (d, w) -> proceedImport(validJson))
-                .setNegativeButton(R.string.cancel, null)
-                .show();
+                    .setTitle(title)
+                    .setMessage(message)
+                    .setPositiveButton(R.string.import_skip_and_continue,
+                            (d, w) -> proceedImport(plan))
+                    .setNegativeButton(R.string.cancel, null)
+                    .show();
             return;
         }
 
-        // Phase 1: detect conflicts
-        proceedImport(validJson);
+        proceedImport(plan);
     }
 
-    /** Continues import after validation passes. Extracted to avoid nesting. */
-    private void proceedImport(JSONObject json) {
-        List<String> conflicts = new ArrayList<>();
-        boolean hasChanges = false;
-        Iterator<String> keys = json.keys();
-        while (keys.hasNext()) {
-            String key = keys.next();
-            String existingValue = prefs.getString(key, null);
-            if (existingValue != null) {
-                try {
-                    if (!existingValue.equals(json.getString(key))) {
-                        conflicts.add(key);
-                    }
-                } catch (JSONException e) {
-                    // Phase 0 pre-validated — should never reach here
-                    conflicts.add(key);
-                }
-            } else {
-                hasChanges = true;
-            }
-        }
-        if (!conflicts.isEmpty()) hasChanges = true;
-
-        // Phase 2: confirm and execute
-        final JSONObject finalJson = json;
-        if (conflicts.isEmpty() && !hasChanges) {
+    private void proceedImport(RuleImportExport.ImportPlan plan) {
+        if (plan.conflicts.isEmpty() && !plan.hasChanges) {
             Toast.makeText(this, R.string.import_no_changes, Toast.LENGTH_SHORT).show();
             return;
         }
 
-        if (!conflicts.isEmpty()) {
-            int showCount = Math.min(conflicts.size(), 5);
-            String conflictList = TextUtils.join("\n", conflicts.subList(0, showCount));
+        if (!plan.conflicts.isEmpty()) {
+            int showCount = Math.min(plan.conflicts.size(), 5);
+            String conflictList = TextUtils.join("\n", plan.conflicts.subList(0, showCount));
             String title;
             String message;
-            if (conflicts.size() > 5) {
-                title = String.format(getString(R.string.import_conflict_title), conflicts.size());
+            if (plan.conflicts.size() > 5) {
+                title = String.format(getString(R.string.import_conflict_title),
+                        plan.conflicts.size());
                 message = String.format(getString(R.string.import_conflict_desc),
-                    conflictList, conflicts.size() - 5);
+                    conflictList, plan.conflicts.size() - 5);
             } else {
-                title = String.format(getString(R.string.import_conflict_title), conflicts.size());
+                title = String.format(getString(R.string.import_conflict_title),
+                        plan.conflicts.size());
                 message = String.format(getString(R.string.import_conflict_desc_short), conflictList);
             }
             new MaterialAlertDialogBuilder(this)
                 .setTitle(title)
                 .setMessage(message)
-                .setPositiveButton(R.string.import_confirm_overwrite, (d, w) -> doImport(finalJson))
+                .setPositiveButton(R.string.import_confirm_overwrite,
+                        (d, w) -> doImport(plan.validRules))
                 .setNegativeButton(R.string.cancel, null)
                 .show();
         } else {
-            doImport(finalJson);
+            doImport(plan.validRules);
         }
     }
 
-    private void doImport(JSONObject json) {
+    private void doImport(Map<String, RedirectRule> rules) {
         if (isFinishing() || isDestroyed()) return;
 
-        SharedPreferences.Editor editor = prefs.edit();
-        Iterator<String> keys = json.keys();
-        int count = 0;
-        while (keys.hasNext()) {
-            String key = keys.next();
-            try {
-                String newValue = json.getString(key);
-                String existingValue = prefs.getString(key, null);
-                if (!newValue.equals(existingValue)) {
-                    editor.putString(key, newValue);
-                    count++;
+        ioExecutor.submit(() -> {
+            int count = repository.importRules(rules);
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                if (count < 0) {
+                    Toast.makeText(this, R.string.import_failed_format, Toast.LENGTH_LONG).show();
+                    return;
                 }
-            } catch (JSONException e) {
-                XposedBridge.log(TAG + ": Import failed for key: " + key + " - " + e.getMessage());
-            }
-        }
-
-        if (count > 0) {
-            editor.commit();
-        }
-        refreshList();
-        Toast.makeText(this, String.format(getString(R.string.import_success), count), Toast.LENGTH_SHORT).show();
+                refreshList();
+                Toast.makeText(this, String.format(getString(R.string.import_success), count),
+                        Toast.LENGTH_SHORT).show();
+            });
+        });
     }
 
     // ── RecyclerView Adapter (static to avoid implicit Activity reference) ──
@@ -485,7 +430,7 @@ public class MainActivity extends AppCompatActivity {
                 @Override
                 public boolean areContentsTheSame(@NonNull RuleEntry oldItem, @NonNull RuleEntry newItem) {
                     return oldItem.pkg.equals(newItem.pkg)
-                            && oldItem.rule.equals(newItem.rule);
+                            && oldItem.ruleValue().equals(newItem.ruleValue());
                 }
             };
 
@@ -515,7 +460,7 @@ public class MainActivity extends AppCompatActivity {
             holder.tvIcon.setText(AppUtils.getFirstChar(label));
             holder.tvTitle.setText(label);
             holder.tvPkg.setText(entry.pkg);
-            holder.tvRule.setText(entry.rule);
+            holder.tvRule.setText(entry.ruleValue());
 
             holder.itemView.setOnLongClickListener(v -> {
                 listener.onRuleLongClick(entry.pkg);
@@ -539,15 +484,4 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    // ── Data class ──
-
-    private static final class RuleEntry {
-        final String pkg;
-        final String rule;
-
-        RuleEntry(String pkg, String rule) {
-            this.pkg = pkg;
-            this.rule = rule;
-        }
-    }
 }
